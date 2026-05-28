@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/donbader/agent-fleet/schemas/fleet.schema.json",
+  "title": "agent-fleet fleet.yaml",
+  "description": "Fleet configuration — shared egress-presets and agent list",
+  "type": "object",
+  "required": ["fleet", "agents", "egress-presets"],
+  "additionalProperties": false,
+  "properties": {
+    "fleet": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Fleet name (used for Docker network/project naming)",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        }
+      }
+    },
+    "agents": {
+      "type": "array",
+      "description": "List of agent names — each must have a matching agents/<name>/agent.yaml",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "egress-presets": {
+      "type": "object",
+      "description": "Named, reusable sets of egress rules. Agents reference these by name.",
+      "additionalProperties": {
+        "$ref": "#/definitions/egress-preset"
+      }
+    }
+  },
+  "definitions": {
+    "egress-preset": {
+      "type": "array",
+      "description": "Ordered list of egress rules. First match wins.",
+      "items": {
+        "$ref": "#/definitions/egress-rule"
+      },
+      "minItems": 1
+    },
+    "egress-rule": {
+      "type": "object",
+      "description": "A single egress rule. Must have at least one matcher (host or endpoint).",
+      "properties": {
+        "host": {
+          "type": "array",
+          "description": "Domain patterns to match. Use [\"*\"] for catch-all.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "endpoint": {
+          "type": "array",
+          "description": "Full URL patterns to match (for MCP endpoints).",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "minItems": 1
+        },
+        "provider": {
+          "type": "string",
+          "description": "Provider path — handles credential injection/rewriting. Optional for passthrough rules.",
+          "pattern": "^github\\.com/"
+        },
+        "options": {
+          "type": "object",
+          "description": "Provider-specific options. Validated by the provider's own schema.json.",
+          "additionalProperties": true
+        }
+      },
+      "anyOf": [
+        { "required": ["host"] },
+        { "required": ["endpoint"] },
+        { "required": ["provider"] }
+      ]
+    }
+  }
+}

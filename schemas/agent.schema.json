@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/donbader/agent-fleet/schemas/agent.schema.json",
+  "title": "agent-fleet agent.yaml",
+  "description": "Per-agent configuration — runtime, egress references, and environment",
+  "type": "object",
+  "required": ["egress", "runtime"],
+  "additionalProperties": false,
+  "properties": {
+    "egress": {
+      "type": "array",
+      "description": "Ordered list of egress preset names (defined in fleet.yaml). First match wins across presets.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "runtime": {
+      "$ref": "#/definitions/provider-ref",
+      "description": "Runtime provider — what process runs in this agent's container"
+    },
+    "env": {
+      "type": "object",
+      "description": "Non-secret environment variables injected into the agent container",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "definitions": {
+    "provider-ref": {
+      "type": "object",
+      "description": "A provider reference with optional options",
+      "required": ["provider"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Provider path (e.g., github.com/donbader/agent-fleet/runtimes/channels-bridge)",
+          "pattern": "^github\\.com/"
+        },
+        "options": {
+          "type": "object",
+          "description": "Provider-specific options. Validated by the provider's own schema.json.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
