@@ -3,7 +3,7 @@
 # Advanced configuration:
 # - Two agents (coder + reviewer), each with own Telegram bot
 # - Shared gateway
-# - OAuth integrations (Notion, Jira) via /oauth command
+# - OAuth integration (Notion) via /oauth command
 # - Docker API Proxy for coder agent (separate gateway)
 # - Strict egress for reviewer (no catch-all)
 #
@@ -12,7 +12,6 @@
 #   2. Create .env with your secrets
 #   3. Run: agent-fleet up
 #   4. In Telegram, send "/oauth notion" to authorize Notion
-#   5. In Telegram, send "/oauth jira" to authorize Jira
 
 fleet:
   name: dev-team
@@ -57,12 +56,6 @@ gateways:
       - endpoint: [https://mcp.notion.com/mcp, https://mcp.atlassian.com/v1/mcp]
         provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
 
-      - endpoint: [https://mcp.slack.com/mcp]
-        provider: "github.com/donbader/agent-fleet/egress-rules/mcp-token"
-        options:
-          app_id_env: SLACK_APP_ID
-          app_secret_env: SLACK_APP_SECRET
-
       - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
         options:
           max_containers: 5
@@ -75,19 +68,13 @@ gateways:
       # Allow all other traffic (npm, pip, docs, etc.)
       - host: ["*"]
 
-  # Reviewer gateway: strict, only GitHub + Datadog
+  # Reviewer gateway: strict, only GitHub
   gw-reviewer:
     egress:
       - host: ["api.github.com", "github.com"]
         provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
         options:
           token_env: GITHUB_PAT_TOKEN
-
-      - host: ["*.datadoghq.com"]
-        provider: "github.com/donbader/agent-fleet/egress-rules/api-key"
-        options:
-          key_env: DD_API_KEY
-          header: DD-API-KEY
 
       # Telegram API (channel provider handles its own bot token)
       - host: ["api.telegram.org"]

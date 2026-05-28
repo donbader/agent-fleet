@@ -141,7 +141,7 @@ type ChannelProvider interface {
 
 ## OAuth UX via Channel
 
-When an agent needs access to an OAuth-protected service (Notion, Jira, etc.), the user authorizes through the chat:
+When an agent needs access to an OAuth-protected service (e.g., Notion), the user authorizes through the chat:
 
 ```
 User:  /oauth notion

@@ -174,9 +174,8 @@ All providers are under the `egress-rules/` namespace. Each implements a specifi
 |----------|----------|
 | `egress-rules/github-pat` | Injects `Authorization: token <pat>` |
 | `egress-rules/mcp-oauth` | OAuth2 flow + Bearer token injection + auto-refresh |
-| `egress-rules/mcp-token` | App credential injection |
 | `egress-rules/docker-api-proxy` | Exposes controlled Docker API to sandbox |
-| `egress-rules/api-key` | Generic header injection |
+| `egress-rules/header-inject` | Generic header injection (config-based custom rules) |
 
 ### github-pat
 
@@ -204,18 +203,6 @@ Handles OAuth2 flow for MCP services. Token management:
 5. Auto-refreshes before expiry
 6. Injects `Authorization: Bearer <token>` on matching requests
 
-### mcp-token
-
-```yaml
-- endpoint: [https://mcp.slack.com/mcp]
-  provider: "github.com/donbader/agent-fleet/egress-rules/mcp-token"
-  options:
-    app_id_env: SLACK_APP_ID
-    app_secret_env: SLACK_APP_SECRET
-```
-
-For MCP services that use app credentials instead of OAuth.
-
 ### docker-api-proxy
 
 ```yaml
@@ -231,18 +218,6 @@ For MCP services that use app credentials instead of OAuth.
 
 Exposes a Docker API endpoint inside the sandbox. No `host:` needed — the provider creates its own internal endpoint and sets `DOCKER_HOST` in the sandbox.
 
-### api-key
-
-```yaml
-- host: ["*.datadoghq.com"]
-  provider: "github.com/donbader/agent-fleet/egress-rules/api-key"
-  options:
-    key_env: DD_API_KEY
-    header: DD-API-KEY
-```
-
-Generic API key injection via custom header.
-
 ## .env File
 
 Secrets referenced by `*_env` options in fleet.yaml:
@@ -257,15 +232,6 @@ GITHUB_PAT_TOKEN=ghp_your-github-pat
 # MCP OAuth (for /oauth command flow)
 NOTION_CLIENT_ID=your-notion-client-id
 NOTION_CLIENT_SECRET=your-notion-client-secret
-JIRA_CLIENT_ID=your-jira-client-id
-JIRA_CLIENT_SECRET=your-jira-client-secret
-
-# MCP Token
-SLACK_APP_ID=your-slack-app-id
-SLACK_APP_SECRET=your-slack-app-secret
-
-# Generic API keys
-DD_API_KEY=your-datadog-api-key
 ```
 
 ## Multi-Session Behavior
