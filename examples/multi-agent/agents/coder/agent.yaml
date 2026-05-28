@@ -1,0 +1,18 @@
+# Agent: coder
+# Full-featured dev agent with Docker + OAuth + permissive egress
+
+runtime: codex
+egress: [telegram-bot-coder, notion-mcp, docker, main]
+
+channel:
+  provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
+  options:
+    allowed_users: ["@coreyortea"]
+    groups:
+      "-100987654321":
+        allowed_users: ["*"]
+        required_mention: true
+
+env:
+  GH_TOKEN: proxy_dummy_token
+  LOG_LEVEL: debug

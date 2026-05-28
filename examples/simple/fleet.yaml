@@ -7,7 +7,7 @@
 # - Allow all other traffic
 #
 # Usage:
-#   1. Copy this file to fleet.yaml
+#   1. Copy this directory
 #   2. Create .env with your secrets
 #   3. Run: agent-fleet up
 
@@ -15,15 +15,7 @@ fleet:
   name: my-agent
 
 agents:
-  coder:
-    runtime: codex
-    egress: [telegram-bot-1, main]
-    channel:
-      provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
-      options:
-        allowed_users: ["@myusername"]
-    env:
-      GH_TOKEN: proxy_dummy_token
+  - coder
 
 egress-presets:
   telegram-bot-1:

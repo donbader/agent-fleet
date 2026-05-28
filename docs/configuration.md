@@ -4,9 +4,13 @@
 
 ```
 my-fleet/
-├── fleet.yaml          # Main configuration
+├── fleet.yaml          # Shared config (egress-presets + agent list)
 ├── .env                # Secrets (never committed)
-└── .gitignore          # Should include .env
+├── .gitignore          # Should include .env
+└── agents/
+    └── <agent-name>/
+        ├── agent.yaml  # Per-agent config (runtime, egress, channel)
+        └── ...         # Optional: home-override, scripts, etc.
 ```
 
 ## fleet.yaml Schema
@@ -16,13 +20,8 @@ fleet:
   name: <fleet-name>
 
 agents:
-  <agent-name>:
-    runtime: codex | claude-code | pi
-    egress: [<preset-name>, ...]     # Ordered list of egress presets (first match wins)
-    channel:
-      provider: "<provider-path>"
-      options: {}                    # Provider-specific options (no credentials here)
-    env: {}                          # Non-secret env vars injected into sandbox
+  - <agent-name>         # References agents/<agent-name>/agent.yaml
+  - <agent-name-2>
 
 egress-presets:
   <preset-name>:
@@ -32,6 +31,19 @@ egress-presets:
     - endpoint: [...]                # Full URL match
       provider: "<provider-path>"
     - host: ["*"]                    # Catch-all (allow remaining traffic)
+```
+
+## agent.yaml Schema
+
+```yaml
+runtime: codex | claude-code | pi
+egress: [<preset-name>, ...]     # Ordered list of egress presets (first match wins)
+
+channel:
+  provider: "<provider-path>"
+  options: {}                    # Provider-specific options (no credentials here)
+
+env: {}                          # Non-secret env vars injected into sandbox
 ```
 
 ## Agents

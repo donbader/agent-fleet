@@ -29,22 +29,25 @@ agent-fleet up
 
 ## Configuration
 
-A fleet is defined by a single `fleet.yaml`:
+A fleet is a directory with `fleet.yaml` + per-agent folders:
+
+```
+my-fleet/
+  fleet.yaml              # shared egress-presets + agent list
+  .env                    # secrets (never committed)
+  agents/
+    coder/
+      agent.yaml          # runtime, egress refs, channel
+```
+
+**fleet.yaml** — shared config:
 
 ```yaml
 fleet:
   name: my-agent
 
 agents:
-  coder:
-    runtime: codex
-    egress: [telegram-bot-1, main]
-    channel:
-      provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
-      options:
-        allowed_users: ["@myusername"]
-    env:
-      GH_TOKEN: proxy_dummy_token
+  - coder
 
 egress-presets:
   telegram-bot-1:
@@ -59,6 +62,21 @@ egress-presets:
       options:
         token: "${GITHUB_PAT_TOKEN}"
     - host: ["*"]
+```
+
+**agents/coder/agent.yaml** — per-agent config:
+
+```yaml
+runtime: codex
+egress: [telegram-bot-1, main]
+
+channel:
+  provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
+  options:
+    allowed_users: ["@myusername"]
+
+env:
+  GH_TOKEN: proxy_dummy_token
 ```
 
 ## Architecture

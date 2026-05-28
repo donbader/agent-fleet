@@ -1,0 +1,13 @@
+# Agent: reviewer
+# Restricted agent — GitHub + Telegram only, no catch-all
+
+runtime: codex
+egress: [telegram-bot-reviewer, github-strict]
+
+channel:
+  provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
+  options:
+    allowed_users: ["@coreyortea"]
+
+env:
+  GH_TOKEN: proxy_dummy_token
