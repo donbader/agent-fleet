@@ -191,9 +191,7 @@ TELEGRAM_BOT_TOKEN=123456:ABC-DEF-your-bot-token
 # GitHub PAT (injected by proxy via header)
 GITHUB_PAT_TOKEN=ghp_your-github-pat
 
-# MCP OAuth (for /oauth command flow)
-NOTION_CLIENT_ID=your-notion-client-id
-NOTION_CLIENT_SECRET=your-notion-client-secret
+# MCP OAuth uses dynamic client registration — no client ID/secret needed
 ```
 
 ## Multi-Session Behavior

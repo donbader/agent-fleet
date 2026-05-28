@@ -161,7 +161,7 @@ Bot:   ✅ Notion connected! Your agent can now access Notion.
 
 ```
 1. /oauth notion
-   → Channel reads NOTION_CLIENT_ID from env
+   → Channel initiates dynamic client registration with MCP server
    → Channel generates state token
    → Channel constructs authorization URL
    → Channel sends URL to user

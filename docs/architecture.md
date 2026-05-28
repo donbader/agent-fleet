@@ -218,12 +218,12 @@ Gateway Proxy
 
 ## Comparison with Alternatives
 
-| | agent-fleet | OpenShell | Plain Docker Compose |
-|---|---|---|---|
-| Transparent proxy | ✅ iptables redirect | ✅ Network namespace | ❌ Manual HTTP_PROXY |
-| Allow-all traffic | ✅ `host: ["*"]` | ❌ Must list all hosts | ✅ No restrictions |
-| Credential injection | ✅ MITM at proxy | ✅ Proxy rewrite | ❌ Env vars exposed |
-| Docker for agents | ✅ Policy-enforced proxy | ❌ Not supported | ✅ But no policy |
-| Kernel isolation | ❌ Docker only | ✅ Landlock + seccomp | ❌ Docker only |
-| Deployment | Docker Compose | OpenShell gateway + CLI | Docker Compose |
-| Complexity | Medium | High | Low |
+| | agent-fleet | Plain Docker Compose |
+|---|---|---|
+| Transparent proxy | ✅ iptables redirect | ❌ Manual HTTP_PROXY |
+| Allow-all traffic | ✅ `host: ["*"]` | ✅ No restrictions |
+| Credential injection | ✅ MITM at proxy | ❌ Env vars exposed |
+| Docker for agents | ✅ Policy-enforced proxy | ✅ But no policy |
+| Kernel isolation | ❌ Docker only | ❌ Docker only |
+| Deployment | Docker Compose | Docker Compose |
+| Complexity | Medium | Low |
