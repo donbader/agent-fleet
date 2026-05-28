@@ -36,25 +36,60 @@ egress-presets:
 ## agent.yaml Schema
 
 ```yaml
-runtime: codex | claude-code | pi
 egress: [<preset-name>, ...]     # Ordered list of egress presets (first match wins)
 
-channel:
-  provider: "<provider-path>"
-  options: {}                    # Provider-specific options (no credentials here)
+runtime:
+  provider: "<runtime-provider-path>"
+  options: {}                    # Provider-specific options
 
 env: {}                          # Non-secret env vars injected into sandbox
 ```
 
-## Agents
+## Runtimes
 
-### Runtime Options
+### Runtime Providers
 
-| Runtime | Description | Protocol | Headless Mode |
-|---------|-------------|----------|---------------|
-| `codex` | OpenAI Codex CLI | ACP native | `codex --acp` |
-| `claude-code` | Anthropic Claude Code | ACP via adapter | `claude -p` + stream-json |
-| `pi` | Pi coding agent | Pi RPC via adapter | `pi --mode rpc` |
+| Provider | Description | Use case |
+|----------|-------------|----------|
+| `.../runtimes/codex` | OpenAI Codex CLI | Headless agent (no messaging) |
+| `.../runtimes/claude-code` | Anthropic Claude Code | Headless agent |
+| `.../runtimes/pi` | Pi coding agent | Headless agent |
+| `.../runtimes/channels-bridge` | Bridge + channels | Agent with messaging (Telegram, web-ui) |
+
+### channels-bridge Options
+
+```yaml
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge"
+  options:
+    agent_provider: "<runtime-provider-path>"   # Which agent to spawn
+    user_base_image_stage: "./Dockerfile"       # Optional: custom image stage
+    channels:
+      - provider: "<channel-provider-path>"
+        options: {}                             # Channel-specific options
+```
+
+### Image Customization (3-stage build)
+
+When `user_base_image_stage` is set, agent-fleet generates a 3-stage Docker build:
+
+```dockerfile
+# Stage 1: Provider base (cached independently)
+FROM ghcr.io/donbader/agent-fleet/codex:latest AS agent-provider-base
+
+# Stage 2: User customization (from user_base_image_stage)
+FROM ubuntu:24.04 AS user-base
+RUN apt-get install -y ripgrep
+COPY home/ /home/agent/
+
+# Stage 3: Final — user base + provider binaries
+FROM user-base AS final
+COPY --from=agent-provider-base /usr/local/bin/codex /usr/local/bin/
+COPY --from=agent-provider-base /usr/local/bin/bridge /usr/local/bin/
+ENTRYPOINT ["bridge"]
+```
+
+Both stages cache independently — user dep changes don't rebuild provider, and vice versa.
 
 ### Egress Presets (Composable)
 

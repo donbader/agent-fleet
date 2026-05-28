@@ -86,13 +86,15 @@ Each provider implements credential injection or service exposure:
 | `egress-rules/api-key` | MITM + inject custom header |
 | `egress-rules/docker-api-proxy` | Expose Docker API endpoint with policy enforcement |
 
-### 5. Channel (`pkg/channel/`)
+### 5. Channels Bridge (`pkg/bridge/`)
 
-Manages channel provider processes:
-- Starts channel provider alongside agent
-- Configures ACP connection (Unix socket)
+The `channels-bridge` runtime provider:
+- Spawns the agent runtime as a child process
+- Manages channel provider instances (Telegram, web-ui, etc.)
+- Routes messages between channels and agent (ACP protocol)
+- Handles command registration (channels register commands, bridge dispatches)
+- Manages OAuth flows via registered commands
 - Handles multi-session routing (multiple chats → one agent, different sessions)
-- Delegates OAuth UX to channel provider
 
 ### 6. Docker API Proxy (`pkg/docker-proxy/`)
 

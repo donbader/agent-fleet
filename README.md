@@ -69,13 +69,16 @@ egress-presets:
 **agents/coder/agent.yaml** — per-agent config:
 
 ```yaml
-runtime: codex
 egress: [telegram-bot-1, main]
 
-channel:
-  provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge"
   options:
-    allowed_users: ["@myusername"]
+    agent_provider: "github.com/donbader/agent-fleet/runtimes/codex"
+    channels:
+      - provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
+        options:
+          allowed_users: ["@myusername"]
 
 env:
   GH_TOKEN: proxy_dummy_token

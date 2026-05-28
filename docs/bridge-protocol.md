@@ -122,19 +122,34 @@ Channel providers must implement:
 ```go
 type ChannelProvider interface {
     // Start the channel (connect to platform, begin listening)
-    Start(ctx context.Context, config ChannelConfig, agentSocket string) error
+    Start(ctx context.Context, config ChannelConfig) error
 
     // Stop the channel gracefully
     Stop(ctx context.Context) error
 
-    // Handle OAuth command from user (delegates to proxy for token exchange)
-    HandleOAuth(ctx context.Context, provider string, callbackURL string) error
+    // RegisterCommand — bridge registers commands at startup
+    RegisterCommand(name string, handler CommandHandler)
+
+    // OnMessage — non-command messages forwarded to agent
+    OnMessage(handler MessageHandler)
+
+    // Send a message to a chat
+    Send(ctx context.Context, chatID string, msg OutgoingMessage) error
+
+    // PromptUser — interactive prompt (blocks until user replies)
+    // Used by OAuth flows, confirmations, etc.
+    PromptUser(ctx context.Context, chatID string, prompt Prompt) (string, error)
 }
+
+type CommandHandler func(ctx context.Context, chatID string, args string) error
+type MessageHandler func(ctx context.Context, msg IncomingMessage)
 ```
+
+The channels-bridge runtime registers commands at startup (e.g., `/oauth`, `/status`, `/cancel`). The channel provider only handles dispatch — it doesn't know about OAuth or any specific command logic.
 
 ### Telegram Provider Behavior
 
-1. **Connect** — Long-poll Telegram API using bot token from env
+1. **Connect** — Long-poll Telegram API using dummy token (real token injected by proxy)
 2. **Filter** — Check `allowed_users` and `groups` config
 3. **Route** — Map chat ID to ACP session (create if new)
 4. **Forward** — Send ACP messages to agent, relay responses back
