@@ -1,0 +1,147 @@
+# Example: Multi-Agent Fleet with OAuth MCP
+#
+# Advanced configuration with:
+# - Two agents (frontend + backend)
+# - Separate proxies for isolation
+# - OAuth integrations (Notion, Jira)
+# - Docker API Proxy for backend agent
+# - Multiple secret providers
+#
+# Usage:
+#   1. Copy this file to fleet.yaml
+#   2. Create .env with your secrets
+#   3. Run: agent-fleet auth notion   (OAuth setup)
+#   4. Run: agent-fleet auth jira     (OAuth setup)
+#   5. Run: agent-fleet up
+
+fleet:
+  name: dev-team
+
+agents:
+  frontend:
+    runtime: codex
+    bridge: telegram
+    sandbox:
+      egress:
+        - host: api.github.com
+          port: 443
+          access: full
+        - host: api.openai.com
+          port: 443
+          access: full
+        - host: registry.npmjs.org
+          port: 443
+          access: read-only
+        - host: api.notion.com
+          port: 443
+          access: full
+      secrets:
+        env_file: .env
+        providers:
+          - openai
+          - github
+          - notion
+    env:
+      LOG_LEVEL: info
+
+  backend:
+    runtime: codex
+    bridge: telegram
+    sandbox:
+      egress:
+        - host: api.github.com
+          port: 443
+          access: full
+        - host: api.openai.com
+          port: 443
+          access: full
+        - host: "*.atlassian.net"
+          port: 443
+          access: full
+        - host: "*.datadoghq.com"
+          port: 443
+          access: read-only
+      secrets:
+        env_file: .env
+        providers:
+          - openai
+          - github
+          - jira
+          - datadog
+      docker:
+        enabled: true
+        allowed_images:
+          - "node:20-*"
+          - "python:3.12-*"
+          - "golang:1.22-*"
+          - "postgres:16-*"
+          - "redis:7-*"
+        max_containers: 5
+        resource_limits:
+          memory: "2g"
+          cpus: "2"
+          pids: 256
+    env:
+      LOG_LEVEL: debug
+
+bridges:
+  telegram:
+    type: telegram
+    token_env: TELEGRAM_BOT_TOKEN
+    allowed_chats:
+      - 123456789              # Your personal chat
+      - -100987654321          # Team group chat
+    sessions:
+      mode: per-chat
+      max_concurrent: 10
+      idle_timeout: 1h
+    commands:
+      start: "Start a new coding session"
+      reset: "Reset current session"
+      status: "Show agent status"
+      switch: "Switch between agents"
+
+secrets:
+  providers:
+    - name: openai
+      type: api-key
+      env: OPENAI_API_KEY
+      inject:
+        header: Authorization
+        prefix: "Bearer "
+        endpoints:
+          - host: api.openai.com
+
+    - name: github
+      type: github-pat
+      env: GITHUB_TOKEN
+
+    - name: notion
+      type: oauth
+      provider: notion
+      client_id_env: NOTION_CLIENT_ID
+      client_secret_env: NOTION_CLIENT_SECRET
+      scopes:
+        - read_content
+        - update_content
+
+    - name: jira
+      type: oauth
+      provider: atlassian
+      client_id_env: JIRA_CLIENT_ID
+      client_secret_env: JIRA_CLIENT_SECRET
+      scopes:
+        - read:jira-work
+        - write:jira-work
+      cloud_id_env: JIRA_CLOUD_ID
+
+    - name: datadog
+      type: api-key
+      env: DD_API_KEY
+      inject:
+        header: DD-API-KEY
+        endpoints:
+          - host: "*.datadoghq.com"
+
+proxy:
+  shared: false    # Each agent gets its own proxy for isolation
