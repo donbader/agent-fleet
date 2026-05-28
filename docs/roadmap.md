@@ -22,7 +22,7 @@ Implement the CLI skeleton with proper UX. Empty implementations, but the full u
 - [ ] `cmd/agent-fleet/` — CLI with all commands (init, up, down, status, logs, exec)
 - [ ] `pkg/config/` — fleet.yaml parser and validator
 - [ ] `pkg/compose/` — Docker Compose generation (stubbed)
-- [ ] `pkg/channel/` — Channel provider lifecycle (stubbed)
+- [ ] `pkg/bridge/` — channels-bridge runtime (spawn agent + manage channels, stubbed)
 - [ ] `pkg/gateway/` — Transparent proxy + egress rule evaluation (stubbed)
 - [ ] `pkg/egress-rules/` — Egress rule provider implementations (stubbed)
 - [ ] `pkg/auth-providers/` — Auth provider implementations (stubbed)

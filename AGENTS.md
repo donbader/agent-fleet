@@ -18,10 +18,10 @@ agent-fleet deploys AI coding agents (Codex, Claude Code, Pi) inside Docker cont
 agent-fleet/
 ├── cmd/agent-fleet/          # CLI entrypoint
 ├── pkg/
-│   ├── config/               # fleet.yaml parsing and validation
+│   ├── config/               # fleet.yaml + agent.yaml parsing and validation
 │   ├── compose/              # Docker Compose generation
 │   ├── gateway/              # Transparent proxy (Go, iptables + TLS MITM)
-│   ├── channel/              # Channel provider lifecycle and ACP protocol
+│   ├── bridge/               # channels-bridge runtime (spawns agent + manages channels)
 │   ├── egress-rules/         # Egress rule provider implementations
 │   │   ├── github-pat/       # GitHub PAT injection
 │   │   ├── mcp-oauth/       # MCP OAuth2 flow + token refresh
@@ -30,8 +30,16 @@ agent-fleet/
 │   │   └── api-key/         # Generic API key injection
 │   ├── fleet/                # Fleet orchestration (up/down/status)
 │   └── adapters/             # Protocol adapters (pi-rpc-to-acp, etc.)
+├── runtimes/
+│   ├── codex/                # Codex runtime provider (+ schema.json)
+│   ├── claude-code/          # Claude Code runtime provider (+ schema.json)
+│   ├── pi/                   # Pi runtime provider (+ schema.json)
+│   └── channels-bridge/      # channels-bridge runtime (+ schema.json)
 ├── channel-providers/
-│   └── telegram/             # Telegram channel provider (Node.js)
+│   └── telegram/             # Telegram channel provider (+ schema.json)
+├── schemas/
+│   ├── fleet.schema.json     # Top-level fleet.yaml validation
+│   └── agent.schema.json     # Top-level agent.yaml validation
 ├── images/
 │   ├── sandbox/              # Base sandbox Dockerfile (iptables + CA + proxy)
 │   └── docker-proxy/        # Docker API Proxy Dockerfile

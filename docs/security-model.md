@@ -6,7 +6,7 @@
 2. **Transparent interception** — iptables forces ALL TCP through proxy. Agent cannot bypass.
 3. **Secrets never in container** — Credentials exist only in proxy memory
 4. **MITM only when needed** — Passthrough for non-injection rules (zero overhead)
-5. **Channel owns its own credentials** — Bot tokens are channel provider's responsibility
+5. **All credentials through proxy** — Bot tokens, PATs, OAuth tokens all injected by proxy. Agent/channel never sees real credentials.
 6. **Controlled escalation** — Docker access is opt-in via egress rule provider
 
 ## Isolation Layers
