@@ -16,12 +16,14 @@ Opinionated agent sandbox orchestrator. Deploy AI coding agents with enforced se
 # Install
 curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | sh
 
-# Initialize a fleet
+# Initialize a fleet (scaffolds fleet.yaml + agents/ folder)
 agent-fleet init my-fleet
 cd my-fleet
 
-# Configure (edit fleet.yaml + .env)
-vim fleet.yaml
+# Configure
+# 1. Edit fleet.yaml — set egress-presets
+# 2. Edit agents/coder/agent.yaml — set runtime, channel, egress refs
+# 3. Create .env with your secrets
 
 # Deploy
 agent-fleet up
