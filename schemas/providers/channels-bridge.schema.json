@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/donbader/agent-fleet/schemas/providers/channels-bridge.schema.json",
+  "title": "channels-bridge runtime options",
+  "description": "Options for the channels-bridge runtime provider",
+  "type": "object",
+  "required": ["agent_provider", "channels"],
+  "additionalProperties": false,
+  "properties": {
+    "agent_provider": {
+      "type": "string",
+      "description": "Runtime provider path for the agent to spawn as child process",
+      "pattern": "^github\\.com/"
+    },
+    "user_base_image_stage": {
+      "type": "string",
+      "description": "Path to user's Dockerfile (relative to agent folder). Used as base stage in 3-stage build.",
+      "pattern": "^\\.\\/",
+      "examples": ["./Dockerfile"]
+    },
+    "channels": {
+      "type": "array",
+      "description": "List of channel providers to enable",
+      "items": {
+        "$ref": "#/definitions/channel-ref"
+      },
+      "minItems": 1
+    }
+  },
+  "definitions": {
+    "channel-ref": {
+      "type": "object",
+      "required": ["provider"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Channel provider path",
+          "pattern": "^github\\.com/"
+        },
+        "options": {
+          "type": "object",
+          "description": "Channel-specific options. Validated by the channel provider's own schema.json.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

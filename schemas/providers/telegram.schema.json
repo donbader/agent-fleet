@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/donbader/agent-fleet/schemas/providers/telegram.schema.json",
+  "title": "Telegram channel provider options",
+  "description": "Options for the Telegram channel provider",
+  "type": "object",
+  "required": ["allowed_users"],
+  "additionalProperties": false,
+  "properties": {
+    "allowed_users": {
+      "type": "array",
+      "description": "Telegram usernames allowed to interact with this agent",
+      "items": {
+        "type": "string",
+        "pattern": "^@"
+      },
+      "minItems": 1
+    },
+    "groups": {
+      "type": "object",
+      "description": "Group chat configurations (key is group chat ID)",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "allowed_users": {
+            "type": "array",
+            "description": "Users allowed in this group. Use [\"*\"] for all.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_mention": {
+            "type": "boolean",
+            "description": "If true, bot only responds when @mentioned in group",
+            "default": false
+          }
+        }
+      }
+    }
+  }
+}
