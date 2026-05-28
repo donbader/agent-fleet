@@ -19,9 +19,8 @@ Initially we designed a single `gateway:` per agent. This led to either:
 Replace `gateways:` with `egress-presets:` — named, reusable sets of egress rules that agents compose by selecting multiple presets.
 
 ```yaml
-agents:
-  coder:
-    egress: [telegram-bot-1, notion-mcp, docker, main]
+# agents/coder/agent.yaml
+egress: [telegram-bot-1, notion-mcp, docker, main]
 ```
 
 Rules are evaluated in order across presets (first preset's rules first). First match wins.

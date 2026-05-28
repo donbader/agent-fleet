@@ -61,18 +61,22 @@ agent-fleet/
 
 See `docs/configuration.md` for full reference. Key concepts:
 
+```
+my-fleet/
+  fleet.yaml              # shared egress-presets + agent list
+  .env                    # secrets
+  agents/
+    <name>/
+      agent.yaml          # per-agent config
+```
+
+**fleet.yaml:**
 ```yaml
 fleet:
   name: my-fleet
 
 agents:
-  <name>:
-    runtime: codex | claude-code | pi
-    egress: [<preset>, <preset>, ...]   # composable, ordered
-    channel:
-      provider: "<provider-path>"
-      options: { ... }
-    env: { ... }
+  - <name>
 
 egress-presets:
   <name>:
@@ -120,7 +124,7 @@ golangci-lint run
 ## What NOT to Do
 
 - Don't use OpenShell — we manage our own proxy and isolation
-- Don't store secrets in fleet.yaml — use `.env` files referenced by `*_env` options
+- Don't store secrets in fleet.yaml — use `.env` + `${VAR}` interpolation in options
 - Don't add features that only work with one agent runtime — keep it agent-agnostic
 - Don't mix channel concerns with gateway concerns
 - Don't set HTTP_PROXY env vars — our proxy is transparent (iptables)
