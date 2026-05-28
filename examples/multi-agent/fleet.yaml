@@ -48,13 +48,13 @@ egress-presets:
     - host: ["api.telegram.org"]
       provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
       options:
-        token_env: TELEGRAM_BOT_TOKEN_CODER
+        token: "${TELEGRAM_BOT_TOKEN_CODER}"
 
   telegram-bot-reviewer:
     - host: ["api.telegram.org"]
       provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
       options:
-        token_env: TELEGRAM_BOT_TOKEN_REVIEWER
+        token: "${TELEGRAM_BOT_TOKEN_REVIEWER}"
 
   # Notion MCP OAuth
   notion-mcp:
@@ -77,7 +77,7 @@ egress-presets:
     - host: ["api.github.com", "github.com"]
       provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
       options:
-        token_env: GITHUB_PAT_TOKEN
+        token: "${GITHUB_PAT_TOKEN}"
     - host: ["*"]
 
   # Strict: GitHub only, no catch-all
@@ -85,6 +85,6 @@ egress-presets:
     - host: ["api.github.com", "github.com"]
       provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
       options:
-        token_env: GITHUB_PAT_TOKEN
+        token: "${GITHUB_PAT_TOKEN}"
     - host: ["api.telegram.org"]
     # No catch-all → only GitHub + Telegram reachable

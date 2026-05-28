@@ -46,11 +46,11 @@ egress-presets:
   telegram-bot-1:
     - host: ["api.telegram.org"]
       provider: ".../egress-rules/telegram-bot"
-      options: { token_env: TELEGRAM_BOT_TOKEN }
+      options: { token: "${TELEGRAM_BOT_TOKEN}" }
 
   main:
     - host: ["api.github.com", "github.com"]
       provider: ".../egress-rules/github-pat"
-      options: { token_env: GITHUB_PAT_TOKEN }
+      options: { token: "${GITHUB_PAT_TOKEN}" }
     - host: ["*"]
 ```

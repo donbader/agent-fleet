@@ -30,11 +30,11 @@ egress-presets:
     - host: ["api.telegram.org"]
       provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
       options:
-        token_env: TELEGRAM_BOT_TOKEN
+        token: "${TELEGRAM_BOT_TOKEN}"
 
   main:
     - host: ["api.github.com", "github.com"]
       provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
       options:
-        token_env: GITHUB_PAT_TOKEN
+        token: "${GITHUB_PAT_TOKEN}"
     - host: ["*"]

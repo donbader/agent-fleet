@@ -111,7 +111,7 @@ Presets are named, reusable sets of egress rules. Multiple agents can share the 
 | `host` | Domain(s) to match | `["api.github.com"]` or `["*"]` |
 | `endpoint` | Full URL(s) to match | `[https://mcp.notion.com/mcp]` |
 | `provider` | Egress rule provider (Go module path) | `"github.com/donbader/agent-fleet/egress-rules/github-pat"` |
-| `options` | Provider-specific options (defined by provider's schema) | `{ token_env: GITHUB_PAT_TOKEN }` |
+| `options` | Provider-specific options (defined by provider's schema) | `{ token: "${GITHUB_PAT_TOKEN}" }` |
 
 **Combinations:**
 - `host:` only — allow traffic (passthrough, no processing)
@@ -124,9 +124,9 @@ Presets are named, reusable sets of egress rules. Multiple agents can share the 
 
 | Provider | Behavior | Options Schema |
 |----------|----------|---------------|
-| `egress-rules/github-pat` | Injects `Authorization: token <pat>` | `{ token_env: string }` |
+| `egress-rules/github-pat` | Injects `Authorization: token <pat>` | `{ token: "${...}" }` |
 | `egress-rules/mcp-oauth` | OAuth2 flow + Bearer injection + auto-refresh | `{}` (tokens managed via /oauth command) |
-| `egress-rules/telegram-bot` | Rewrites URL path with bot token | `{ token_env: string }` |
+| `egress-rules/telegram-bot` | Rewrites URL path with bot token | `{ token: "${...}" }` |
 | `egress-rules/docker-api-proxy` | Exposes Docker API with policy enforcement | `{ max_containers, disk_quota, resources }` |
 | `egress-rules/header-inject` | Generic header injection (config-based) | `{ headers: map[string]string }` |
 
@@ -153,7 +153,7 @@ egress-presets:
     - host: ["api.telegram.org"]
       provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
       options:
-        token_env: TELEGRAM_BOT_TOKEN
+        token: "${TELEGRAM_BOT_TOKEN}"
 
   # Notion MCP OAuth
   notion-mcp:
@@ -165,7 +165,7 @@ egress-presets:
     - host: ["api.github.com", "github.com"]
       provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
       options:
-        token_env: GITHUB_PAT_TOKEN
+        token: "${GITHUB_PAT_TOKEN}"
     - host: ["*"]
 
   # Docker access
