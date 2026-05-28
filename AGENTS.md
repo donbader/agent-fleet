@@ -4,11 +4,12 @@ You are working on `agent-fleet` — an opinionated agent sandbox orchestrator w
 
 ## Project Overview
 
-agent-fleet deploys AI coding agents (Codex, Claude Code, Pi) inside OpenShell sandboxes with:
-- Default-deny egress control (all outbound traffic goes through a gateway proxy)
+agent-fleet deploys AI coding agents (Codex, Claude Code, Pi) inside Docker containers with:
+- Transparent egress proxy (iptables forces ALL TCP through our Go proxy)
+- Default-deny egress with first-match-wins rules
 - Per-agent messaging channels (Telegram bots) speaking ACP protocol
+- Credential injection at L7 via MITM (agent never sees real tokens)
 - Fleet management (multiple agents from one config)
-- Credential injection at the network boundary via auth providers
 - Optional Docker API Proxy for controlled container spawning
 
 ## Repository Structure
@@ -18,19 +19,22 @@ agent-fleet/
 ├── cmd/agent-fleet/          # CLI entrypoint
 ├── pkg/
 │   ├── config/               # fleet.yaml parsing and validation
-│   ├── sandbox/              # OpenShell sandbox provisioning
+│   ├── compose/              # Docker Compose generation
+│   ├── gateway/              # Transparent proxy (Go, iptables + TLS MITM)
 │   ├── channel/              # Channel provider lifecycle and ACP protocol
-│   ├── gateway/              # Gateway proxy + egress rule compilation
-│   ├── auth-providers/       # Credential injection implementations
+│   ├── egress-rules/         # Egress rule provider implementations
 │   │   ├── github-pat/       # GitHub PAT injection
 │   │   ├── mcp-oauth/       # MCP OAuth2 flow + token refresh
 │   │   ├── mcp-token/       # MCP app credential injection
+│   │   ├── docker-api-proxy/ # Docker API Proxy + DinD
 │   │   └── api-key/         # Generic API key injection
-│   ├── docker-proxy/         # Docker API Proxy implementation
 │   ├── fleet/                # Fleet orchestration (up/down/status)
 │   └── adapters/             # Protocol adapters (pi-rpc-to-acp, etc.)
 ├── channel-providers/
-│   └── telegram/             # Telegram channel provider
+│   └── telegram/             # Telegram channel provider (Node.js)
+├── images/
+│   ├── sandbox/              # Base sandbox Dockerfile (iptables + CA + proxy)
+│   └── docker-proxy/        # Docker API Proxy Dockerfile
 ├── docs/                     # Architecture and design documents
 ├── examples/                 # Example fleet configurations
 ├── tests/                    # Integration tests
@@ -39,19 +43,19 @@ agent-fleet/
 
 ## Key Design Decisions
 
-1. **OpenShell is the sandbox layer** — We don't build our own sandbox. OpenShell handles isolation (Landlock, seccomp, network namespace). We orchestrate on top.
+1. **No OpenShell** — We use Docker + our own transparent proxy. OpenShell doesn't support allow-all traffic (`host: ["*"]`), which is essential for dev agents.
 
-2. **Default deny egress** — No traffic leaves the sandbox unless an egress rule matches. Use `- host: ["*"]` as catch-all to allow all.
+2. **Transparent proxy** — iptables redirects ALL outbound TCP to our Go proxy. Agent cannot bypass it. No HTTP_PROXY env vars needed.
 
-3. **Channel per agent** — Each agent has its own bot/channel instance. No shared bots with routing complexity.
+3. **Default deny egress** — No traffic leaves unless an egress rule matches. `host: ["*"]` as catch-all to allow all.
 
-4. **Auth at the gateway boundary** — Auth providers inject credentials into matching requests at the L7 proxy. Agent never sees real tokens.
+4. **Channel per agent** — Each agent has its own bot/channel instance. No shared bots.
 
-5. **Provider pattern** — Channels and auth use Go module path identifiers (e.g., `github.com/donbader/agent-fleet/auth-providers/github-pat`). Built-in for now, extensible later.
+5. **Unified egress-rules** — Everything is an egress rule with a provider. GitHub PAT, MCP OAuth, Docker API Proxy — all the same abstraction.
 
-6. **Gateways are shareable** — Multiple agents can reference the same gateway for shared egress rules and auth.
+6. **MITM only when needed** — Rules with credential injection use MITM. Rules without use passthrough (zero overhead, end-to-end TLS preserved).
 
-7. **OAuth via chat** — Users authorize OAuth services by sending `/oauth <provider>` in their chat with the bot.
+7. **Gateways are shareable** — Multiple agents can reference the same gateway for shared egress rules.
 
 ## Configuration Format
 
@@ -68,18 +72,18 @@ agents:
     channel:
       provider: "<provider-path>"
       options: { ... }
-    docker: { enabled: true, ... }    # optional
     env: { ... }
 
 gateways:
   <name>:
     egress:
       - host: [...]                   # domain match
-        auth:                         # optional credential injection
-          provider: "<provider-path>"
-          options: { ... }
+        provider: "<provider-path>"   # optional credential injection
+        options: { ... }
       - endpoint: [...]               # full URL match (for MCP)
-        auth: { ... }
+        provider: "<provider-path>"
+      - provider: "<provider-path>"   # provider-only (e.g., docker-api-proxy)
+        options: { ... }
       - host: ["*"]                   # catch-all (allow remaining)
 ```
 
@@ -92,7 +96,7 @@ go build ./cmd/agent-fleet
 # Test
 go test ./...
 
-# Integration tests (requires Docker + OpenShell)
+# Integration tests (requires Docker)
 go test ./tests/... -tags=integration
 
 # Lint
@@ -110,15 +114,17 @@ golangci-lint run
 
 ## Key Dependencies
 
-- [OpenShell](https://github.com/NVIDIA/OpenShell) — Sandbox runtime (CLI: `openshell`)
-- [ACP SDK](https://github.com/anthropics/agent-client-protocol) — Agent Client Protocol
-- [grammy](https://grammy.dev/) — Telegram bot framework (for channel provider, Node.js)
-- Docker Engine — Container runtime
+- Go standard library `crypto/tls` — TLS MITM with generated CA
+- `github.com/elazarl/goproxy` or custom — transparent proxy
+- Docker Engine — container runtime
+- Docker Compose — orchestration
+- [grammy](https://grammy.dev/) — Telegram bot framework (channel provider, Node.js)
 
 ## What NOT to Do
 
-- Don't bypass OpenShell — all sandbox operations go through `openshell` CLI or API
+- Don't use OpenShell — we manage our own proxy and isolation
 - Don't store secrets in fleet.yaml — use `.env` files referenced by `*_env` options
 - Don't add features that only work with one agent runtime — keep it agent-agnostic
-- Don't mix channel concerns with gateway concerns (channel = messaging, gateway = egress + auth)
-- Don't inject Telegram bot tokens via gateway — channel provider manages its own platform credentials
+- Don't mix channel concerns with gateway concerns
+- Don't set HTTP_PROXY env vars — our proxy is transparent (iptables)
+- Don't bypass iptables — the transparent proxy is the security boundary

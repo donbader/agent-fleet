@@ -19,7 +19,7 @@ The Docker API Proxy prevents this by intercepting and validating every Docker A
 ## Architecture
 
 ```
-┌─ OpenShell Sandbox ─────────────────────────────────────────┐
+┌─ Agent Container ───────────────────────────────────────────┐
 │                                                             │
 │  Agent                                                      │
 │    │                                                        │

@@ -53,13 +53,13 @@ ACP is a multi-session protocol for communicating with AI agents. It uses newlin
 
 ### Channel Inside Sandbox
 
-The channel provider runs inside the OpenShell sandbox alongside the agent. This means:
-- Channel's platform API access goes through the gateway (egress controlled)
+The channel provider runs inside the agent container alongside the agent. This means:
+- Channel's platform API access goes through the transparent proxy (egress controlled)
 - Channel communicates with agent via local Unix socket (no network hop)
 - Channel manages its own platform credentials (bot token read from env)
 
 ```
-┌─ OpenShell Sandbox ──────────────────────────────────────┐
+┌─ Agent Container ────────────────────────────────────────┐
 │                                                          │
 │  ┌─────────┐    Unix Socket    ┌─────────────────────┐   │
 │  │  Agent  │◄─────────────────►│  Channel Provider   │   │

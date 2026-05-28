@@ -4,11 +4,11 @@ Opinionated agent sandbox orchestrator. Deploy AI coding agents with enforced se
 
 ## What It Does
 
-- **Sandbox isolation** — Every agent runs inside an [OpenShell](https://github.com/NVIDIA/OpenShell) sandbox with default-deny egress
+- **Sandbox isolation** — Every agent runs inside a Docker container with transparent egress proxy and default-deny rules
 - **Channel abstraction** — Connect agents to Telegram (or other platforms) via ACP (Agent Client Protocol)
 - **Fleet management** — Deploy and manage multiple agents from a single configuration
-- **Credential injection** — Secrets never enter the sandbox; auth providers inject them at the network boundary
-- **Docker API Proxy** — Optionally allow agents to spin up containers in a controlled, policy-enforced way
+- **Credential injection** — Secrets never enter the sandbox; egress rule providers inject them at the network boundary
+- **Docker API Proxy** — Optionally allow agents to spin up containers via a policy-enforced egress rule
 
 ## Quick Start
 
@@ -52,17 +52,25 @@ gateways:
     egress:
       # GitHub with PAT injection
       - host: ["api.github.com", "github.com"]
-        auth:
-          provider: "github.com/donbader/agent-fleet/auth-providers/github-pat"
-          options:
-            token_env: GITHUB_PAT_TOKEN
+        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+        options:
+          token_env: GITHUB_PAT_TOKEN
 
       # MCP services with OAuth (managed via /oauth command in chat)
       - endpoint: [https://mcp.notion.com/mcp]
-        auth:
-          provider: "github.com/donbader/agent-fleet/auth-providers/mcp-oauth"
+        provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
 
-      # Allow all other traffic (no auth injection)
+      # Docker API Proxy (exposes controlled Docker access to sandbox)
+      - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
+        options:
+          max_containers: 5
+          disk_quota: "10Gi"
+          resources:
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+
+      # Allow all other traffic (no provider = passthrough)
       - host: ["*"]
 ```
 
@@ -72,8 +80,8 @@ gateways:
 ┌─────────────────────────────────────────────────────────────────┐
 │  agent-fleet CLI                                                 │
 │  - Reads fleet.yaml                                             │
-│  - Provisions OpenShell sandboxes                               │
-│  - Wires channels, gateways, and auth providers                 │
+│  - Generates Docker Compose                                     │
+│  - Wires channels and gateways                                  │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
           ┌────────────────────┼────────────────────┐
@@ -86,16 +94,15 @@ gateways:
    │ │(ACP↔TG) ││     │ │(ACP↔TG) ││     │             │
    │ └─────────┘│     │ └─────────┘│     │             │
    │             │     │             │     │             │
-   │ OpenShell  │     │ OpenShell  │     │ OpenShell  │
-   │ Sandbox    │     │ Sandbox    │     │ Sandbox    │
+   │ Docker     │     │ Docker     │     │ Docker     │
+   │ + Proxy    │     │ + Proxy    │     │ + Proxy    │
    └──────┬──────┘     └──────┬──────┘     └─────────────┘
           │                    │
           └────────┬───────────┘
                    │ (shared gateway)
           ┌────────▼────────┐
           │  Gateway gw-main │
-          │  (egress proxy)  │
-          │  + auth injection│
+          │  (egress rules)  │
           └─────────────────┘
 ```
 

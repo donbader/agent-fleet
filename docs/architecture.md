@@ -2,7 +2,7 @@
 
 ## Overview
 
-agent-fleet is an orchestrator that deploys AI coding agents inside secure sandboxes with messaging channels. It sits on top of [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) for sandbox isolation and adds fleet management, channel wiring, and credential orchestration.
+agent-fleet is an orchestrator that deploys AI coding agents inside secure Docker containers with transparent egress proxying, messaging channels, and fleet management.
 
 ## System Layers
 
@@ -10,31 +10,31 @@ agent-fleet is an orchestrator that deploys AI coding agents inside secure sandb
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 4: Fleet Orchestration (agent-fleet CLI)              │
 │  - Reads fleet.yaml                                         │
-│  - Provisions sandboxes via OpenShell                       │
-│  - Starts channel providers                                 │
+│  - Generates Docker Compose                                 │
 │  - Manages lifecycle (up/down/status/logs)                  │
 └─────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 3: Channel (ACP ↔ Messaging Platform)                 │
 │  - Speaks ACP to the agent                                  │
 │  - Speaks platform API (Telegram, Slack, etc.)              │
-│  - Runs inside the sandbox (egress controlled)              │
+│  - Runs inside the agent container                          │
 │  - Multi-session: one channel handles multiple chats        │
 │  - Handles OAuth UX (/oauth <provider>)                     │
 └─────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 2: Gateway (Egress Proxy + Auth Injection)            │
-│  - Default deny — only matched rules pass                   │
-│  - Auth providers inject credentials at L7 boundary         │
-│  - Shared between agents or per-agent                       │
-│  - Manages OAuth token storage and refresh                  │
+│  Layer 2: Gateway (Transparent Egress Proxy)                 │
+│  - iptables redirects ALL outbound TCP to proxy             │
+│  - Reads TLS SNI to identify destination                    │
+│  - Evaluates egress rules (first match wins)                │
+│  - Credential injection via MITM when needed                │
+│  - Passthrough tunnel when no injection needed              │
+│  - Default deny — no match = connection dropped             │
 └─────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 1: Sandbox (OpenShell)                                │
-│  - Kernel isolation (Landlock, seccomp, namespaces)         │
-│  - Network namespace forces all egress through gateway      │
-│  - Process restriction (unprivileged agent)                 │
-│  - Compute: Docker / Podman / VM                            │
+│  Layer 1: Container Isolation (Docker)                        │
+│  - Internal network (no direct internet access)             │
+│  - Agent container can only reach proxy                     │
+│  - Proxy container bridges internal ↔ external              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -47,153 +47,183 @@ The user-facing command-line tool. Commands:
 | Command | Description |
 |---------|-------------|
 | `agent-fleet init <name>` | Scaffold a new fleet directory with example fleet.yaml |
-| `agent-fleet up` | Provision all agents defined in fleet.yaml |
-| `agent-fleet down` | Tear down all sandboxes and channels |
+| `agent-fleet up` | Generate Docker Compose and start all agents |
+| `agent-fleet down` | Tear down all containers |
 | `agent-fleet status` | Show running agents, channels, and health |
-| `agent-fleet logs <agent>` | Stream logs from an agent's sandbox |
-| `agent-fleet exec <agent>` | Open a shell in an agent's sandbox |
+| `agent-fleet logs <agent>` | Stream logs from an agent |
+| `agent-fleet exec <agent>` | Open a shell in an agent container |
 
 ### 2. Config (`pkg/config/`)
 
 Parses and validates `fleet.yaml`. Resolves:
 - Agent runtime selection
-- Channel provider wiring (which agent gets which bot)
-- Gateway assignment (which agents share which gateway)
+- Channel provider wiring
+- Gateway assignment (shared or per-agent)
 - Egress rule compilation
-- Auth provider configuration
+- Docker Compose generation
 
-### 3. Sandbox (`pkg/sandbox/`)
+### 3. Gateway Proxy (`pkg/gateway/`)
 
-Wraps OpenShell CLI/API to:
-- Create sandboxes with the right image and policy
-- Attach network policies (compiled from gateway egress rules)
-- Manage sandbox lifecycle (create, connect, delete)
-- Hot-reload network policies when config changes
+A Go binary that runs as a transparent proxy inside the agent container:
 
-### 4. Channel (`pkg/channel/`)
+- Listens on a local port (e.g., 8443)
+- iptables redirects all outbound TCP to this port
+- Reads TLS ClientHello SNI to determine destination host
+- Evaluates egress rules in order (first match wins)
+- For rules with providers: MITM TLS with sandbox CA, inject credentials
+- For rules without providers: SNI-based passthrough tunnel
+- No match: drop connection
+
+### 4. Egress Rule Providers (`pkg/egress-rules/`)
+
+Each provider implements credential injection or service exposure:
+
+| Provider | Behavior |
+|----------|----------|
+| `egress-rules/github-pat` | MITM + inject `Authorization: token <pat>` |
+| `egress-rules/mcp-oauth` | MITM + inject `Authorization: Bearer <token>` + auto-refresh |
+| `egress-rules/mcp-token` | MITM + inject app credentials |
+| `egress-rules/api-key` | MITM + inject custom header |
+| `egress-rules/docker-api-proxy` | Expose Docker API endpoint with policy enforcement |
+
+### 5. Channel (`pkg/channel/`)
 
 Manages channel provider processes:
-- Starts channel provider alongside agent sandbox
+- Starts channel provider alongside agent
 - Configures ACP connection (Unix socket)
 - Handles multi-session routing (multiple chats → one agent, different sessions)
 - Delegates OAuth UX to channel provider
 
-### 5. Gateway (`pkg/gateway/`)
+### 6. Docker API Proxy (`pkg/docker-proxy/`)
 
-Manages egress proxy instances:
-- Compiles fleet.yaml egress rules into OpenShell network policy
-- Loads and initializes auth providers
-- Routes requests through auth providers for credential injection
-- Manages OAuth token storage and refresh lifecycle
-- Can be shared between multiple agents
+Optional. When the `docker-api-proxy` egress rule is present:
+- Runs a DinD (Docker-in-Docker) container on the internal network
+- Docker API Proxy validates requests against policy
+- Agent reaches proxy via the transparent proxy (allowed by egress rule)
+- New containers also on internal network (egress through proxy)
 
-### 6. Auth Providers (`pkg/auth-providers/`)
-
-Each auth provider implements a specific credential injection interface:
-
-| Provider | Interface | What It Does |
-|----------|-----------|-------------|
-| `github-pat` | HeaderInjector | Adds `Authorization: token <pat>` |
-| `mcp-oauth` | OAuthProvider | Manages OAuth2 flow + token refresh + Bearer injection |
-| `mcp-token` | HeaderInjector | Adds app-specific auth headers |
-| `telegram` | URLRewriter | Injects bot token into Telegram API URL path |
-| `api-key` | HeaderInjector | Adds custom header with API key |
-
-### 7. Docker API Proxy (`pkg/docker-proxy/`)
-
-Optional component. When enabled:
-- Runs as a separate process accessible from the sandbox
-- Validates all Docker API requests against policy
-- Enforces: image allowlist, no privileged, resource limits, network inheritance
-- Only accepts authenticated requests from known sandbox agents
-
-### 8. Adapters (`pkg/adapters/`)
+### 7. Adapters (`pkg/adapters/`)
 
 Protocol translation for agents that don't speak ACP natively:
 
-| Adapter | From | To | Notes |
-|---------|------|-----|-------|
-| `pi-rpc-to-acp` | Pi RPC (stdin/stdout JSON) | ACP (ndJSON stdio) | Wraps Pi process |
-| `claude-headless-to-acp` | Claude Code CLI (stream-json) | ACP (ndJSON stdio) | Wraps `claude -p` |
+| Adapter | From | To |
+|---------|------|-----|
+| `pi-rpc-to-acp` | Pi RPC (stdin/stdout JSON) | ACP (ndJSON stdio) |
+| `claude-headless-to-acp` | Claude Code CLI (stream-json) | ACP (ndJSON stdio) |
 
-## Data Flow
+## Transparent Proxy Flow
 
-### Message from Telegram to Agent
-
-```
-1. User sends message in Telegram
-2. Telegram API → Channel provider (inside sandbox, bot token in request)
-3. Channel creates/resumes ACP session for this chat
-4. Channel sends ACP message to Agent process (via Unix socket)
-5. Agent processes, may make tool calls
-6. Agent responds via ACP
-7. Channel sends response to Telegram API (bot token in request)
-```
-
-### Agent Makes External API Call (e.g., GitHub)
+### How iptables Redirect Works
 
 ```
-1. Agent code calls https://api.github.com/repos/...
-2. Request hits sandbox network namespace → forced to gateway proxy
-3. Gateway evaluates egress rules in order:
-   - Rule: host ["api.github.com", "github.com"] → MATCH
-   - Auth provider: github-pat → inject Authorization header
-4. Request forwarded to api.github.com with real PAT
-5. Response returned to agent
+Agent process makes TCP connection to api.github.com:443
+  │
+  │ (kernel intercepts via iptables NAT REDIRECT)
+  │ (original destination preserved via SO_ORIGINAL_DST)
+  ▼
+Gateway Proxy (listening on localhost:8443)
+  │
+  ├── Reads TLS ClientHello → SNI: "api.github.com"
+  ├── Looks up original destination (SO_ORIGINAL_DST)
+  ├── Evaluates egress rules in order:
+  │     Rule 1: host ["api.github.com"] + github-pat provider → MATCH
+  │
+  ├── Provider needs credential injection → MITM mode:
+  │     1. Complete TLS handshake with agent (using sandbox CA)
+  │     2. Read HTTP request from agent
+  │     3. Inject: Authorization: token ghp_REAL_TOKEN
+  │     4. Open TLS connection to real api.github.com
+  │     5. Forward modified request
+  │     6. Relay response back to agent
+  │
+  └── Agent receives response (thinks it talked directly to GitHub)
 ```
 
-### OAuth Flow (e.g., Notion MCP)
+### Passthrough (No Credential Injection)
 
 ```
-1. User sends "/oauth notion" in Telegram chat
-2. Channel provider handles command:
-   - Generates OAuth authorization URL (using client_id from .env)
-   - Sends URL to user in chat
-3. User clicks URL, authorizes in browser
-4. User pastes callback URL back in chat: "/oauth callback https://...?code=abc123"
-5. Channel provider extracts code, sends to gateway
-6. Gateway's mcp-oauth auth provider:
-   - Exchanges code for access_token + refresh_token
-   - Stores tokens
-   - Auto-refreshes before expiry
-7. Future requests to mcp.notion.com get Bearer token injected
+Agent connects to registry.npmjs.org:443
+  │
+  ▼
+Gateway Proxy
+  ├── SNI: "registry.npmjs.org"
+  ├── Rule match: host ["*"] (catch-all, no provider)
+  ├── No credential injection needed → passthrough mode:
+  │     1. Open TCP connection to registry.npmjs.org:443
+  │     2. Splice/relay raw bytes (no TLS termination)
+  │     3. Agent's TLS goes end-to-end to destination
+  └── Zero overhead, no MITM
 ```
 
-### Agent Spins Up Docker Container (when docker enabled)
+## Network Topology
 
 ```
-1. Agent calls Docker API proxy endpoint
-2. Docker API Proxy validates:
-   - Image in allowlist? ✅
-   - No --privileged? ✅
-   - Resource limits within budget? ✅
-3. Proxy creates container on internal network
-4. New container's egress also goes through gateway
-5. Container ID returned to agent
+┌─────────────────────────────────────────────────────────────┐
+│  Docker Host                                                 │
+│                                                             │
+│  ┌─ Internal Network (no internet access) ────────────────┐  │
+│  │                                                        │  │
+│  │  ┌─ Agent Container ─────────────────────────────────┐ │  │
+│  │  │                                                   │ │  │
+│  │  │  ┌─────────────────────────────────────────────┐  │ │  │
+│  │  │  │  Agent (codex) + Channel (telegram bot)     │  │ │  │
+│  │  │  │  All TCP → iptables REDIRECT → proxy        │  │ │  │
+│  │  │  └─────────────────────────────────────────────┘  │ │  │
+│  │  │                                                   │ │  │
+│  │  │  ┌─────────────────────────────────────────────┐  │ │  │
+│  │  │  │  Gateway Proxy (Go binary, transparent)     │  │ │  │
+│  │  │  │  Egress rules + credential injection        │  │ │  │
+│  │  │  └─────────────────────────────────────────────┘  │ │  │
+│  │  │                                                   │ │  │
+│  │  └───────────────────────────────────────────────────┘ │  │
+│  │                                                        │  │
+│  │  ┌─ Docker API Proxy (optional) ────────────────────┐ │  │
+│  │  │  Policy enforcement → DinD container             │ │  │
+│  │  └─────────────────────────────────────────────────┘ │  │
+│  │                                                        │  │
+│  │  ┌─ Agent-spawned containers (optional) ────────────┐ │  │
+│  │  │  Also on internal network, egress via proxy      │ │  │
+│  │  └─────────────────────────────────────────────────┘ │  │
+│  │                                                        │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                             │
+│  ┌─ External Network ─────────────────────────────────────┐  │
+│  │  Gateway Proxy has access here (bridges internal↔ext)  │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Key Invariants
 
-1. **Default deny** — If no egress rule matches, the request is blocked
-2. **Secrets never in sandbox** — Credentials exist only in gateway auth providers
-3. **Channel manages its own platform credentials** — Bot tokens are channel provider's responsibility
-4. **Gateway handles third-party auth** — GitHub, MCP, etc. credentials injected at proxy boundary
-5. **Agent-agnostic** — Any agent that speaks ACP (or has an adapter) works
-6. **Multi-session** — One channel instance handles multiple concurrent conversations
-7. **Gateways are shareable** — Multiple agents can use the same gateway for egress
+1. **All egress is proxied** — iptables forces ALL TCP through the gateway proxy. No bypass possible.
+2. **Default deny** — If no egress rule matches, connection is dropped
+3. **Transparent** — Agent doesn't know about the proxy. No HTTP_PROXY env vars needed.
+4. **MITM only when needed** — Passthrough for rules without credential injection (zero overhead)
+5. **Secrets never in container** — Credentials exist only in proxy memory, injected at L7
+6. **Channel manages its own credentials** — Bot token is channel's responsibility
+7. **Agent-agnostic** — Any agent that speaks ACP (or has an adapter) works
+8. **Multi-session** — One channel instance handles multiple concurrent conversations
 
-## Provider System
+## Technology Choices
 
-Providers are identified by Go module paths but are built-in to agent-fleet. The path is a naming convention for extensibility:
+| Component | Technology | Why |
+|-----------|-----------|-----|
+| CLI | Go | Single binary, good CLI libraries (cobra) |
+| Gateway Proxy | Go (`goproxy` or custom) | Same language as CLI, can embed in same binary |
+| Channel Provider | Node.js (grammy) | Best Telegram bot library ecosystem |
+| Docker API Proxy | Go | Same binary, HTTP reverse proxy |
+| Container Orchestration | Docker Compose | Simple, no k8s needed |
+| TLS MITM | Go `crypto/tls` + generated CA | Standard library, no external deps |
 
-```
-github.com/donbader/agent-fleet/channel-providers/telegram
-github.com/donbader/agent-fleet/auth-providers/github-pat
-github.com/donbader/agent-fleet/auth-providers/mcp-oauth
-```
+## Comparison with Alternatives
 
-Different provider types implement different interfaces:
-- **Channel providers** — messaging platform integration (receive/send messages, OAuth UX)
-- **Auth providers** — credential injection at gateway boundary (header injection, OAuth flow, URL rewriting)
-
-Future: support external providers via plugin mechanism.
+| | agent-fleet | OpenShell | Plain Docker Compose |
+|---|---|---|---|
+| Transparent proxy | ✅ iptables redirect | ✅ Network namespace | ❌ Manual HTTP_PROXY |
+| Allow-all traffic | ✅ `host: ["*"]` | ❌ Must list all hosts | ✅ No restrictions |
+| Credential injection | ✅ MITM at proxy | ✅ Proxy rewrite | ❌ Env vars exposed |
+| Docker for agents | ✅ Policy-enforced proxy | ❌ Not supported | ✅ But no policy |
+| Kernel isolation | ❌ Docker only | ✅ Landlock + seccomp | ❌ Docker only |
+| Deployment | Docker Compose | OpenShell gateway + CLI | Docker Compose |
+| Complexity | Medium | High | Low |

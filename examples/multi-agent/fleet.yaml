@@ -2,10 +2,10 @@
 #
 # Advanced configuration:
 # - Two agents (coder + reviewer), each with own Telegram bot
-# - Shared gateway for egress
+# - Shared gateway
 # - OAuth integrations (Notion, Jira) via /oauth command
-# - Docker API Proxy for coder agent
-# - Strict egress (no catch-all)
+# - Docker API Proxy for coder agent (separate gateway)
+# - Strict egress for reviewer (no catch-all)
 #
 # Usage:
 #   1. Copy this file to fleet.yaml
@@ -20,7 +20,7 @@ fleet:
 agents:
   coder:
     runtime: codex
-    gateway: gw-shared
+    gateway: gw-coder
     channel:
       provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
       options:
@@ -30,27 +30,13 @@ agents:
           "-100987654321":
             allowed_users: ["*"]
             required_mention: true
-    docker:
-      enabled: true
-      allowed_images:
-        - "node:20-*"
-        - "node:22-*"
-        - "python:3.12-*"
-        - "golang:1.22-*"
-        - "postgres:16-*"
-        - "redis:7-*"
-      max_containers: 5
-      resource_limits:
-        memory: "2g"
-        cpus: "2"
-        pids: 256
     env:
       GH_TOKEN: proxy_dummy_token
       LOG_LEVEL: debug
 
   reviewer:
     runtime: codex
-    gateway: gw-shared
+    gateway: gw-reviewer
     channel:
       provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
       options:
@@ -60,42 +46,50 @@ agents:
       GH_TOKEN: proxy_dummy_token
 
 gateways:
-  gw-shared:
+  # Coder gateway: full access + Docker + MCP OAuth
+  gw-coder:
     egress:
-      # GitHub with PAT injection
       - host: ["api.github.com", "github.com"]
-        auth:
-          provider: "github.com/donbader/agent-fleet/auth-providers/github-pat"
-          options:
-            token_env: GITHUB_PAT_TOKEN
+        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+        options:
+          token_env: GITHUB_PAT_TOKEN
 
-      # MCP OAuth endpoints (Notion, Jira)
-      # Tokens managed via /oauth command in chat
       - endpoint: [https://mcp.notion.com/mcp, https://mcp.atlassian.com/v1/mcp]
-        auth:
-          provider: "github.com/donbader/agent-fleet/auth-providers/mcp-oauth"
+        provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
 
-      # MCP with app credentials (Slack)
       - endpoint: [https://mcp.slack.com/mcp]
-        auth:
-          provider: "github.com/donbader/agent-fleet/auth-providers/mcp-token"
-          options:
-            app_id_env: SLACK_APP_ID
-            app_secret_env: SLACK_APP_SECRET
+        provider: "github.com/donbader/agent-fleet/egress-rules/mcp-token"
+        options:
+          app_id_env: SLACK_APP_ID
+          app_secret_env: SLACK_APP_SECRET
 
-      # Datadog (read-only monitoring)
+      - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
+        options:
+          max_containers: 5
+          disk_quota: "10Gi"
+          resources:
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+
+      # Allow all other traffic (npm, pip, docs, etc.)
+      - host: ["*"]
+
+  # Reviewer gateway: strict, only GitHub + Datadog
+  gw-reviewer:
+    egress:
+      - host: ["api.github.com", "github.com"]
+        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+        options:
+          token_env: GITHUB_PAT_TOKEN
+
       - host: ["*.datadoghq.com"]
-        auth:
-          provider: "github.com/donbader/agent-fleet/auth-providers/api-key"
-          options:
-            key_env: DD_API_KEY
-            header: DD-API-KEY
-
-      # Package registries (no auth needed)
-      - host: ["registry.npmjs.org", "pypi.org", "proxy.golang.org"]
+        provider: "github.com/donbader/agent-fleet/egress-rules/api-key"
+        options:
+          key_env: DD_API_KEY
+          header: DD-API-KEY
 
       # Telegram API (channel provider handles its own bot token)
       - host: ["api.telegram.org"]
 
-      # NOTE: No catch-all "- host: ['*']" → strict mode
-      # Only the hosts listed above are reachable
+      # NOTE: No catch-all → strict mode. Only listed hosts are reachable.

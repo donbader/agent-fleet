@@ -21,9 +21,9 @@ Implement the CLI skeleton with proper UX. Empty implementations, but the full u
 **Deliverables:**
 - [ ] `cmd/agent-fleet/` — CLI with all commands (init, up, down, status, logs, exec)
 - [ ] `pkg/config/` — fleet.yaml parser and validator
-- [ ] `pkg/sandbox/` — OpenShell interface (stubbed)
+- [ ] `pkg/compose/` — Docker Compose generation (stubbed)
 - [ ] `pkg/channel/` — Channel provider lifecycle (stubbed)
-- [ ] `pkg/gateway/` — Gateway proxy + egress rule compiler (stubbed)
+- [ ] `pkg/gateway/` — Transparent proxy + egress rule evaluation (stubbed)
 - [ ] `pkg/auth-providers/` — Auth provider implementations (stubbed)
 - [ ] `pkg/docker-proxy/` — Docker API Proxy (stubbed)
 - [ ] `channel-providers/telegram/` — Telegram channel provider (stubbed)
@@ -32,7 +32,7 @@ Implement the CLI skeleton with proper UX. Empty implementations, but the full u
 
 **Features:**
 - Agent: Codex with ACP + Telegram channel (own bot per agent)
-- OpenShell sandbox with default-deny egress
+- Docker container with transparent proxy and default-deny egress
 - Gateway with auth providers (github-pat, mcp-oauth, mcp-token, api-key)
 - OAuth UX via chat (`/oauth notion` → URL → paste callback)
 - Docker API Proxy (optional per agent)
@@ -47,7 +47,7 @@ Fill in the implementations with integration tests driving development.
 1. Config parsing + validation (unit tests)
 2. Egress rule compilation (unit tests)
 3. Auth provider interfaces + github-pat (unit tests)
-4. OpenShell sandbox provisioning (integration tests)
+4. Docker Compose generation (integration tests)
 5. Gateway proxy wiring (integration tests)
 6. Channel provider lifecycle + ACP protocol (integration tests)
 7. Telegram channel provider (integration tests with mock Telegram API)
@@ -57,15 +57,15 @@ Fill in the implementations with integration tests driving development.
 
 **Testing strategy:**
 - Unit tests for pure logic (config parsing, egress compilation, policy validation)
-- Integration tests for external interactions (OpenShell, Docker, Telegram)
+- Integration tests for external interactions (Docker, Telegram)
 - Mock external services where possible
-- Real OpenShell + Docker for CI integration tests
+- Real Docker for CI integration tests
 
 ## Phase 4: CI Setup
 
 **Deliverables:**
 - [ ] GitHub Actions workflow for unit tests (fast, every PR)
-- [ ] GitHub Actions workflow for integration tests (requires Docker + OpenShell)
+- [ ] GitHub Actions workflow for integration tests (requires Docker)
 - [ ] Linting (golangci-lint)
 - [ ] Build verification
 - [ ] Release automation (goreleaser)

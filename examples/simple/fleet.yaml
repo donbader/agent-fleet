@@ -1,7 +1,7 @@
 # Example: Single Agent with Telegram
 #
 # Simplest useful configuration:
-# - One Codex agent
+# - One Codex agent with transparent proxy
 # - Telegram channel (own bot)
 # - GitHub access with PAT injection
 # - Allow all other traffic
@@ -29,12 +29,11 @@ agents:
 gateways:
   gw-main:
     egress:
-      # GitHub with PAT injection
+      # GitHub with PAT injection (proxy MITMs and injects real token)
       - host: ["api.github.com", "github.com"]
-        auth:
-          provider: "github.com/donbader/agent-fleet/auth-providers/github-pat"
-          options:
-            token_env: GITHUB_PAT_TOKEN
+        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+        options:
+          token_env: GITHUB_PAT_TOKEN
 
-      # Allow all other traffic (no auth injection)
+      # Allow all other traffic (passthrough, no MITM)
       - host: ["*"]
