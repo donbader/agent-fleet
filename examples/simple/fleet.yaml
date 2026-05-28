@@ -2,7 +2,7 @@
 #
 # Simplest useful configuration:
 # - One Codex agent with transparent proxy
-# - Telegram channel (own bot)
+# - Telegram channel (bot token injected by proxy)
 # - GitHub access with PAT injection
 # - Allow all other traffic
 #
@@ -17,23 +17,24 @@ fleet:
 agents:
   coder:
     runtime: codex
-    gateway: gw-main
+    egress: [telegram-bot-1, main]
     channel:
       provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
       options:
-        bot_token_env: TELEGRAM_BOT_TOKEN
         allowed_users: ["@myusername"]
     env:
       GH_TOKEN: proxy_dummy_token
 
-gateways:
-  gw-main:
-    egress:
-      # GitHub with PAT injection (proxy MITMs and injects real token)
-      - host: ["api.github.com", "github.com"]
-        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
-        options:
-          token_env: GITHUB_PAT_TOKEN
+egress-presets:
+  telegram-bot-1:
+    - host: ["api.telegram.org"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
+      options:
+        token_env: TELEGRAM_BOT_TOKEN
 
-      # Allow all other traffic (passthrough, no MITM)
-      - host: ["*"]
+  main:
+    - host: ["api.github.com", "github.com"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+      options:
+        token_env: GITHUB_PAT_TOKEN
+    - host: ["*"]

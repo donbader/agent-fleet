@@ -13,20 +13,25 @@ my-fleet/
 
 ```yaml
 fleet:
-  name: <fleet-name>             # Fleet identifier
+  name: <fleet-name>
 
 agents:
   <agent-name>:
     runtime: codex | claude-code | pi
-    gateway: <gateway-name>      # Which gateway this agent uses for egress
-    channel:                     # Messaging channel (one per agent, each agent = own bot)
+    egress: [<preset-name>, ...]     # Ordered list of egress presets (first match wins)
+    channel:
       provider: "<provider-path>"
-      options: {}                # Provider-specific options
-    env: {}                      # Non-secret env vars injected into sandbox
+      options: {}                    # Provider-specific options (no credentials here)
+    env: {}                          # Non-secret env vars injected into sandbox
 
-gateways:
-  <gateway-name>:
-    egress: []                   # Ordered egress rules (default deny, first match wins)
+egress-presets:
+  <preset-name>:
+    - host: [...]                    # Domain match
+      provider: "<provider-path>"    # Optional: handles injection/rewriting
+      options: {}
+    - endpoint: [...]                # Full URL match
+      provider: "<provider-path>"
+    - host: ["*"]                    # Catch-all (allow remaining traffic)
 ```
 
 ## Agents
@@ -39,9 +44,25 @@ gateways:
 | `claude-code` | Anthropic Claude Code | ACP via adapter | `claude -p` + stream-json |
 | `pi` | Pi coding agent | Pi RPC via adapter | `pi --mode rpc` |
 
+### Egress Presets (Composable)
+
+Each agent selects one or more egress presets. Rules are evaluated in order across presets (first preset's rules first, then second preset's, etc.). First match wins.
+
+```yaml
+agents:
+  coder:
+    egress: [telegram-bot-1, notion-mcp, main]
+    # Evaluation order:
+    # 1. telegram-bot-1 rules (Telegram API with bot token injection)
+    # 2. notion-mcp rules (Notion MCP with OAuth injection)
+    # 3. main rules (GitHub PAT + catch-all)
+```
+
+Put the preset with `host: ["*"]` catch-all **last** in the array.
+
 ### Channel Configuration
 
-Each agent has its own channel (its own bot instance). Channels handle messaging platform communication.
+Each agent has its own channel (its own bot instance). Channel provider does NOT manage credentials — the proxy handles all credential injection (including bot tokens).
 
 ```yaml
 agents:
@@ -49,7 +70,6 @@ agents:
     channel:
       provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
       options:
-        bot_token_env: TELEGRAM_BOT_TOKEN
         allowed_users: ["@coreyortea"]
         groups:
           "-100987654321":
@@ -57,11 +77,12 @@ agents:
             required_mention: true
 ```
 
+The channel provider uses a dummy bot token. The transparent proxy intercepts requests to `api.telegram.org` and rewrites the URL with the real token.
+
 #### Telegram Channel Options
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `bot_token_env` | string | Env var name containing the bot token |
 | `allowed_users` | string[] | Telegram usernames allowed to interact |
 | `groups` | map | Group chat configurations |
 | `groups.<id>.allowed_users` | string[] | Users allowed in this group (`["*"]` = all) |
@@ -79,154 +100,95 @@ agents:
       LOG_LEVEL: info
 ```
 
-Note: `GH_TOKEN: proxy_dummy_token` is a pattern where the agent sees a dummy value, but the gateway's egress rule provider injects the real PAT at the network boundary.
+## Egress Presets
 
-## Gateways
-
-Gateways are named egress proxies. Multiple agents can share a gateway.
-
-### Egress Rules
-
-Rules are evaluated in order. First match wins. **Default deny** — if no rule matches, the request is blocked.
-
-```yaml
-gateways:
-  gw-main:
-    egress:
-      # Rule 1: GitHub with PAT injection
-      - host: ["api.github.com", "github.com"]
-        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
-        options:
-          token_env: GITHUB_PAT_TOKEN
-
-      # Rule 2: MCP OAuth endpoints
-      - endpoint: [https://mcp.notion.com/mcp, https://mcp.atlassian.com/v1/mcp]
-        provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
-
-      # Rule 3: Docker API Proxy (no host — exposes internal endpoint)
-      - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
-        options:
-          max_containers: 5
-          disk_quota: "10Gi"
-          resources:
-            limits:
-              memory: "2Gi"
-              cpu: "2"
-
-      # Rule 4: Allow all other traffic (no provider = passthrough)
-      - host: ["*"]
-```
+Presets are named, reusable sets of egress rules. Multiple agents can share the same preset.
 
 ### Rule Format
-
-Each rule can have `host:`, `endpoint:`, and/or `provider:`:
 
 | Field | Description | Example |
 |-------|-------------|---------|
 | `host` | Domain(s) to match | `["api.github.com"]` or `["*"]` |
 | `endpoint` | Full URL(s) to match | `[https://mcp.notion.com/mcp]` |
 | `provider` | Egress rule provider (Go module path) | `"github.com/donbader/agent-fleet/egress-rules/github-pat"` |
-| `options` | Provider-specific options | `{ token_env: GITHUB_PAT_TOKEN }` |
+| `options` | Provider-specific options (defined by provider's schema) | `{ token_env: GITHUB_PAT_TOKEN }` |
 
 **Combinations:**
-- `host:` only — allow traffic to these hosts (passthrough, no processing)
-- `host:` + `provider:` — match these hosts, apply provider logic (e.g., inject credentials)
-- `endpoint:` + `provider:` — match these URLs, apply provider logic
+- `host:` only — allow traffic (passthrough, no processing)
+- `host:` + `provider:` — match hosts, delegate to provider
+- `endpoint:` + `provider:` — match URLs, delegate to provider
 - `provider:` only — provider exposes its own internal endpoint (e.g., Docker API Proxy)
 - `host: ["*"]` — catch-all, allow all remaining traffic
 
-### Shared vs Separate Gateways
-
-```yaml
-# Shared gateway — both agents use same egress rules
-agents:
-  frontend:
-    gateway: gw-shared
-  backend:
-    gateway: gw-shared
-
-# Separate gateways — different egress policies
-agents:
-  frontend:
-    gateway: gw-frontend
-  backend:
-    gateway: gw-backend
-
-gateways:
-  gw-frontend:
-    egress:
-      - host: ["registry.npmjs.org"]
-      - host: ["*"]
-  gw-backend:
-    egress:
-      - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
-        options: { max_containers: 3 }
-      - host: ["*"]
-```
-
-## Egress Rule Providers
-
-All providers are under the `egress-rules/` namespace. Each implements a specific behavior when traffic matches.
-
 ### Built-in Providers
 
-| Provider | Behavior |
-|----------|----------|
-| `egress-rules/github-pat` | Injects `Authorization: token <pat>` |
-| `egress-rules/mcp-oauth` | OAuth2 flow + Bearer token injection + auto-refresh |
-| `egress-rules/docker-api-proxy` | Exposes controlled Docker API to sandbox |
-| `egress-rules/header-inject` | Generic header injection (config-based custom rules) |
+| Provider | Behavior | Options Schema |
+|----------|----------|---------------|
+| `egress-rules/github-pat` | Injects `Authorization: token <pat>` | `{ token_env: string }` |
+| `egress-rules/mcp-oauth` | OAuth2 flow + Bearer injection + auto-refresh | `{}` (tokens managed via /oauth command) |
+| `egress-rules/telegram-bot` | Rewrites URL path with bot token | `{ token_env: string }` |
+| `egress-rules/docker-api-proxy` | Exposes Docker API with policy enforcement | `{ max_containers, disk_quota, resources }` |
+| `egress-rules/header-inject` | Generic header injection (config-based) | `{ headers: map[string]string }` |
 
-### github-pat
+### Provider Interface
 
-```yaml
-- host: ["api.github.com", "github.com"]
-  provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
-  options:
-    token_env: GITHUB_PAT_TOKEN    # Env var in .env file
+Each provider defines its own options schema. The proxy delegates request handling to the provider — it doesn't need to know about injection strategies:
+
+```go
+type EgressRuleProvider interface {
+    // What options this provider accepts
+    OptionsSchema() Schema
+
+    // Handle a matched request (inject, rewrite, proxy, etc.)
+    HandleRequest(req *http.Request, opts Options) (*http.Request, error)
+}
 ```
 
-Injects `Authorization: token <value>` on matching requests.
-
-### mcp-oauth
+### Example Presets
 
 ```yaml
-- endpoint: [https://mcp.notion.com/mcp, https://mcp.atlassian.com/v1/mcp]
-  provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
+egress-presets:
+  # Telegram bot token injection (URL rewrite)
+  telegram-bot-1:
+    - host: ["api.telegram.org"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
+      options:
+        token_env: TELEGRAM_BOT_TOKEN
+
+  # Notion MCP OAuth
+  notion-mcp:
+    - endpoint: [https://mcp.notion.com/mcp]
+      provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
+
+  # Common base: GitHub + allow-all
+  main:
+    - host: ["api.github.com", "github.com"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+      options:
+        token_env: GITHUB_PAT_TOKEN
+    - host: ["*"]
+
+  # Docker access
+  docker:
+    - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
+      options:
+        max_containers: 5
+        disk_quota: "10Gi"
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "2"
 ```
-
-Handles OAuth2 flow for MCP services. Token management:
-1. User sends `/oauth notion` in chat
-2. Bot responds with authorization URL
-3. User clicks, authorizes, pastes callback URL
-4. Gateway exchanges code for token, stores it
-5. Auto-refreshes before expiry
-6. Injects `Authorization: Bearer <token>` on matching requests
-
-### docker-api-proxy
-
-```yaml
-- provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
-  options:
-    max_containers: 5
-    disk_quota: "10Gi"
-    resources:
-      limits:
-        memory: "2Gi"
-        cpu: "2"
-```
-
-Exposes a Docker API endpoint inside the sandbox. No `host:` needed — the provider creates its own internal endpoint and sets `DOCKER_HOST` in the sandbox.
 
 ## .env File
 
-Secrets referenced by `*_env` options in fleet.yaml:
+Secrets referenced by `*_env` options in egress-presets:
 
 ```bash
-# Agent channel
+# Telegram bot token (injected by proxy via URL rewrite)
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF-your-bot-token
 
-# GitHub
+# GitHub PAT (injected by proxy via header)
 GITHUB_PAT_TOKEN=ghp_your-github-pat
 
 # MCP OAuth (for /oauth command flow)
@@ -236,21 +198,12 @@ NOTION_CLIENT_SECRET=your-notion-client-secret
 
 ## Multi-Session Behavior
 
-Each chat/thread maps to a separate ACP session. One agent handles multiple concurrent conversations independently:
-
-```
-Telegram DM from @alice  → Session "alice-001"
-Telegram DM from @bob    → Session "bob-001"
-Group chat mention        → Session "group-987654321"
-```
+Each chat/thread maps to a separate ACP session. One agent handles multiple concurrent conversations independently.
 
 ## Environment Variables (Auto-injected)
-
-These are set automatically by agent-fleet inside the sandbox:
 
 | Variable | Description |
 |----------|-------------|
 | `AGENT_FLEET_AGENT_NAME` | Name of this agent |
-| `AGENT_FLEET_GATEWAY` | Gateway name this agent uses |
-| `AGENT_FLEET_CHANNEL_SOCKET` | Path to ACP Unix socket for channel communication |
-| `AGENT_FLEET_DOCKER_HOST` | Docker API Proxy endpoint (if docker-api-proxy rule present) |
+| `AGENT_FLEET_CHANNEL_SOCKET` | Path to ACP Unix socket |
+| `AGENT_FLEET_DOCKER_HOST` | Docker API Proxy endpoint (if docker-api-proxy preset used) |

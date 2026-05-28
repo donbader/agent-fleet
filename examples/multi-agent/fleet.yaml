@@ -2,9 +2,9 @@
 #
 # Advanced configuration:
 # - Two agents (coder + reviewer), each with own Telegram bot
-# - Shared gateway
+# - Shared presets (main) + agent-specific presets
 # - OAuth integration (Notion) via /oauth command
-# - Docker API Proxy for coder agent (separate gateway)
+# - Docker API Proxy for coder agent
 # - Strict egress for reviewer (no catch-all)
 #
 # Usage:
@@ -19,11 +19,10 @@ fleet:
 agents:
   coder:
     runtime: codex
-    gateway: gw-coder
+    egress: [telegram-bot-coder, notion-mcp, docker, main]
     channel:
       provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
       options:
-        bot_token_env: TELEGRAM_BOT_TOKEN_CODER
         allowed_users: ["@coreyortea"]
         groups:
           "-100987654321":
@@ -35,48 +34,57 @@ agents:
 
   reviewer:
     runtime: codex
-    gateway: gw-reviewer
+    egress: [telegram-bot-reviewer, github-strict]
     channel:
       provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
       options:
-        bot_token_env: TELEGRAM_BOT_TOKEN_REVIEWER
         allowed_users: ["@coreyortea"]
     env:
       GH_TOKEN: proxy_dummy_token
 
-gateways:
-  # Coder gateway: full access + Docker + MCP OAuth
-  gw-coder:
-    egress:
-      - host: ["api.github.com", "github.com"]
-        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
-        options:
-          token_env: GITHUB_PAT_TOKEN
+egress-presets:
+  # Per-agent Telegram bot presets
+  telegram-bot-coder:
+    - host: ["api.telegram.org"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
+      options:
+        token_env: TELEGRAM_BOT_TOKEN_CODER
 
-      - endpoint: [https://mcp.notion.com/mcp, https://mcp.atlassian.com/v1/mcp]
-        provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
+  telegram-bot-reviewer:
+    - host: ["api.telegram.org"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
+      options:
+        token_env: TELEGRAM_BOT_TOKEN_REVIEWER
 
-      - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
-        options:
-          max_containers: 5
-          disk_quota: "10Gi"
-          resources:
-            limits:
-              memory: "2Gi"
-              cpu: "2"
+  # Notion MCP OAuth
+  notion-mcp:
+    - endpoint: [https://mcp.notion.com/mcp]
+      provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
 
-      # Allow all other traffic (npm, pip, docs, etc.)
-      - host: ["*"]
+  # Docker access
+  docker:
+    - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
+      options:
+        max_containers: 5
+        disk_quota: "10Gi"
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "2"
 
-  # Reviewer gateway: strict, only GitHub
-  gw-reviewer:
-    egress:
-      - host: ["api.github.com", "github.com"]
-        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
-        options:
-          token_env: GITHUB_PAT_TOKEN
+  # Permissive: GitHub + allow all
+  main:
+    - host: ["api.github.com", "github.com"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+      options:
+        token_env: GITHUB_PAT_TOKEN
+    - host: ["*"]
 
-      # Telegram API (channel provider handles its own bot token)
-      - host: ["api.telegram.org"]
-
-      # NOTE: No catch-all → strict mode. Only listed hosts are reachable.
+  # Strict: GitHub only, no catch-all
+  github-strict:
+    - host: ["api.github.com", "github.com"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+      options:
+        token_env: GITHUB_PAT_TOKEN
+    - host: ["api.telegram.org"]
+    # No catch-all → only GitHub + Telegram reachable

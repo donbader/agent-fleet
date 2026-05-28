@@ -66,22 +66,24 @@ The channel provider runs inside the agent container alongside the agent. This m
 │  │ (codex) │   /ipc/agent.sock │  (Telegram bot)     │   │
 │  └─────────┘                   └──────────┬──────────┘   │
 │                                           │              │
-│                              egress (gateway allows it)  │
+│                              egress (proxy handles it)   │
 │                                           │              │
 └───────────────────────────────────────────┼──────────────┘
                                             │
                                      ┌──────▼──────┐
-                                     │   Gateway   │
-                                     │  (no auth   │
-                                     │  injection  │
-                                     │  for TG)    │
+                                     │ Egress Proxy │
+                                     │  (no auth    │
+                                     │  for TG —    │
+                                     │  bot token   │
+                                     │  injected    │
+                                     │  by proxy)   │
                                      └──────┬──────┘
                                             │
                                             ▼
                                    api.telegram.org
 ```
 
-Note: The gateway allows `api.telegram.org` traffic but does NOT inject credentials for it. The channel provider includes the bot token directly in its API calls (it's the channel's own credential).
+Note: The proxy injects the bot token into Telegram API requests (URL path rewrite). The channel provider uses a dummy token — it never sees the real one.
 
 ### Multi-Session Routing
 
@@ -125,7 +127,7 @@ type ChannelProvider interface {
     // Stop the channel gracefully
     Stop(ctx context.Context) error
 
-    // Handle OAuth command from user (delegates to gateway for token exchange)
+    // Handle OAuth command from user (delegates to proxy for token exchange)
     HandleOAuth(ctx context.Context, provider string, callbackURL string) error
 }
 ```
@@ -167,15 +169,15 @@ Bot:   ✅ Notion connected! Your agent can now access Notion.
 2. /oauth callback <url>
    → Channel extracts code + state from URL
    → Channel validates state token
-   → Channel sends (code, provider) to gateway
-   → Gateway's mcp-oauth auth provider:
+   → Channel sends (code, provider) to proxy
+   → Proxy's mcp-oauth provider:
      - Exchanges code for access_token + refresh_token
-     - Stores tokens (associated with this gateway)
+     - Stores tokens
      - Schedules auto-refresh
    → Channel confirms to user
 
 3. Future requests to mcp.notion.com
-   → Gateway matches egress rule with mcp-oauth provider
+   → Proxy matches egress rule with mcp-oauth provider
    → Provider injects: Authorization: Bearer <fresh_token>
 ```
 
@@ -213,4 +215,4 @@ The adapter:
 | Rate limit (Telegram) | Queue messages, respect backoff |
 | Unauthorized user | Silently ignore (log for audit) |
 | Channel restart | Resume existing sessions from ACP session IDs |
-| OAuth token expired | Gateway auto-refreshes; if refresh fails, prompt user to re-authorize |
+| OAuth token expired | Proxy auto-refreshes; if refresh fails, prompt user to re-authorize |

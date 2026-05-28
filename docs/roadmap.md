@@ -24,6 +24,7 @@ Implement the CLI skeleton with proper UX. Empty implementations, but the full u
 - [ ] `pkg/compose/` — Docker Compose generation (stubbed)
 - [ ] `pkg/channel/` — Channel provider lifecycle (stubbed)
 - [ ] `pkg/gateway/` — Transparent proxy + egress rule evaluation (stubbed)
+- [ ] `pkg/egress-rules/` — Egress rule provider implementations (stubbed)
 - [ ] `pkg/auth-providers/` — Auth provider implementations (stubbed)
 - [ ] `pkg/docker-proxy/` — Docker API Proxy (stubbed)
 - [ ] `channel-providers/telegram/` — Telegram channel provider (stubbed)
@@ -33,10 +34,10 @@ Implement the CLI skeleton with proper UX. Empty implementations, but the full u
 **Features:**
 - Agent: Codex with ACP + Telegram channel (own bot per agent)
 - Docker container with transparent proxy and default-deny egress
-- Gateway with auth providers (github-pat, mcp-oauth, mcp-token, api-key)
+- Egress rule providers (github-pat, mcp-oauth, telegram-bot)
 - OAuth UX via chat (`/oauth notion` → URL → paste callback)
 - Docker API Proxy (optional per agent)
-- Multi-agent fleet with shared or separate gateways
+- Multi-agent fleet with composable egress presets
 - Multi-session per agent (different chats = different ACP sessions)
 
 ## Phase 3: Implementation with TDD
@@ -48,7 +49,7 @@ Fill in the implementations with integration tests driving development.
 2. Egress rule compilation (unit tests)
 3. Auth provider interfaces + github-pat (unit tests)
 4. Docker Compose generation (integration tests)
-5. Gateway proxy wiring (integration tests)
+5. Egress proxy wiring (integration tests)
 6. Channel provider lifecycle + ACP protocol (integration tests)
 7. Telegram channel provider (integration tests with mock Telegram API)
 8. mcp-oauth auth provider + OAuth flow (integration tests)

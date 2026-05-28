@@ -52,7 +52,7 @@ The Docker API Proxy prevents this by intercepting and validating every Docker A
 agents:
   coder:
     runtime: codex
-    gateway: gw-main
+    egress: [docker, main]
     channel: ...
     docker:
       enabled: true
@@ -144,7 +144,7 @@ Agent → Docker API Proxy
   Header: X-Sandbox-Token: <jwt>
   
 Proxy validates:
-  - Token signed by gateway
+  - Token signed by proxy
   - Token bound to this sandbox ID
   - Token not expired
 ```

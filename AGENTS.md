@@ -55,7 +55,7 @@ agent-fleet/
 
 6. **MITM only when needed** — Rules with credential injection use MITM. Rules without use passthrough (zero overhead, end-to-end TLS preserved).
 
-7. **Gateways are shareable** — Multiple agents can reference the same gateway for shared egress rules.
+7. **Egress presets are composable** — Agents select multiple presets. Rules evaluated in order across presets (first match wins).
 
 ## Configuration Format
 
@@ -68,23 +68,20 @@ fleet:
 agents:
   <name>:
     runtime: codex | claude-code | pi
-    gateway: <gateway-name>
+    egress: [<preset>, <preset>, ...]   # composable, ordered
     channel:
       provider: "<provider-path>"
       options: { ... }
     env: { ... }
 
-gateways:
+egress-presets:
   <name>:
-    egress:
-      - host: [...]                   # domain match
-        provider: "<provider-path>"   # optional credential injection
-        options: { ... }
-      - endpoint: [...]               # full URL match (for MCP)
-        provider: "<provider-path>"
-      - provider: "<provider-path>"   # provider-only (e.g., docker-api-proxy)
-        options: { ... }
-      - host: ["*"]                   # catch-all (allow remaining)
+    - host: [...]                   # domain match
+      provider: "<provider-path>"   # optional: handles injection
+      options: { ... }
+    - endpoint: [...]               # full URL match (for MCP)
+      provider: "<provider-path>"
+    - host: ["*"]                   # catch-all (allow remaining)
 ```
 
 ## Development Workflow

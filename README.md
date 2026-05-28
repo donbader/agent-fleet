@@ -38,40 +38,27 @@ fleet:
 agents:
   coder:
     runtime: codex
-    gateway: gw-main
+    egress: [telegram-bot-1, main]
     channel:
       provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
       options:
-        bot_token_env: TELEGRAM_BOT_TOKEN
         allowed_users: ["@myusername"]
     env:
       GH_TOKEN: proxy_dummy_token
 
-gateways:
-  gw-main:
-    egress:
-      # GitHub with PAT injection
-      - host: ["api.github.com", "github.com"]
-        provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
-        options:
-          token_env: GITHUB_PAT_TOKEN
+egress-presets:
+  telegram-bot-1:
+    - host: ["api.telegram.org"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
+      options:
+        token_env: TELEGRAM_BOT_TOKEN
 
-      # MCP services with OAuth (managed via /oauth command in chat)
-      - endpoint: [https://mcp.notion.com/mcp]
-        provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
-
-      # Docker API Proxy (exposes controlled Docker access to sandbox)
-      - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
-        options:
-          max_containers: 5
-          disk_quota: "10Gi"
-          resources:
-            limits:
-              memory: "2Gi"
-              cpu: "2"
-
-      # Allow all other traffic (no provider = passthrough)
-      - host: ["*"]
+  main:
+    - host: ["api.github.com", "github.com"]
+      provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
+      options:
+        token_env: GITHUB_PAT_TOKEN
+    - host: ["*"]
 ```
 
 ## Architecture
@@ -81,7 +68,7 @@ gateways:
 │  agent-fleet CLI                                                 │
 │  - Reads fleet.yaml                                             │
 │  - Generates Docker Compose                                     │
-│  - Wires channels and gateways                                  │
+│  - Wires channels and egress presets                             │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
           ┌────────────────────┼────────────────────┐
@@ -99,10 +86,10 @@ gateways:
    └──────┬──────┘     └──────┬──────┘     └─────────────┘
           │                    │
           └────────┬───────────┘
-                   │ (shared gateway)
+                   │ (shared egress presets)
           ┌────────▼────────┐
-          │  Gateway gw-main │
-          │  (egress rules)  │
+          │  Egress Proxy    │
+          │  (transparent)   │
           └─────────────────┘
 ```
 
