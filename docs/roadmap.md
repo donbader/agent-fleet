@@ -19,25 +19,25 @@ Setup repo with architecture docs, design decisions, and configuration reference
 Implement the CLI skeleton with proper UX. Empty implementations, but the full user-facing interface is defined.
 
 **Deliverables:**
-- [ ] `cmd/agent-fleet/` — CLI with all commands (init, up, down, status, logs, exec, auth)
+- [ ] `cmd/agent-fleet/` — CLI with all commands (init, up, down, status, logs, exec)
 - [ ] `pkg/config/` — fleet.yaml parser and validator
 - [ ] `pkg/sandbox/` — OpenShell interface (stubbed)
-- [ ] `pkg/bridge/` — Bridge lifecycle (stubbed)
-- [ ] `pkg/egress/` — Egress rule compiler (stubbed)
+- [ ] `pkg/channel/` — Channel provider lifecycle (stubbed)
+- [ ] `pkg/gateway/` — Gateway proxy + egress rule compiler (stubbed)
+- [ ] `pkg/auth-providers/` — Auth provider implementations (stubbed)
 - [ ] `pkg/docker-proxy/` — Docker API Proxy (stubbed)
-- [ ] `bridges/telegram/` — Telegram bridge Dockerfile + entrypoint (stubbed)
+- [ ] `channel-providers/telegram/` — Telegram channel provider (stubbed)
 - [ ] `go.mod`, `go.sum`
 - [ ] Example fleet.yaml that works with `agent-fleet init`
 
 **Features:**
-- Agent: Codex with ACP bridge + Telegram
-- OpenShell sandbox with .env-based secrets
-- OAuth provider support (Notion, Jira, Datadog, Gmail)
-- GitHub PAT provider
-- Docker API Proxy (optional)
-- Multi-agent fleet support
-- Shared vs separate proxy option
-- Multi-session per agent (different chats = different sessions)
+- Agent: Codex with ACP + Telegram channel (own bot per agent)
+- OpenShell sandbox with default-deny egress
+- Gateway with auth providers (github-pat, mcp-oauth, mcp-token, api-key)
+- OAuth UX via chat (`/oauth notion` → URL → paste callback)
+- Docker API Proxy (optional per agent)
+- Multi-agent fleet with shared or separate gateways
+- Multi-session per agent (different chats = different ACP sessions)
 
 ## Phase 3: Implementation with TDD
 
@@ -46,12 +46,14 @@ Fill in the implementations with integration tests driving development.
 **Order of implementation:**
 1. Config parsing + validation (unit tests)
 2. Egress rule compilation (unit tests)
-3. OpenShell sandbox provisioning (integration tests)
-4. Bridge lifecycle + ACP protocol (integration tests)
-5. Telegram bridge (integration tests with mock Telegram API)
-6. Docker API Proxy (integration tests)
-7. Fleet orchestration (end-to-end tests)
-8. OAuth flow (integration tests)
+3. Auth provider interfaces + github-pat (unit tests)
+4. OpenShell sandbox provisioning (integration tests)
+5. Gateway proxy wiring (integration tests)
+6. Channel provider lifecycle + ACP protocol (integration tests)
+7. Telegram channel provider (integration tests with mock Telegram API)
+8. mcp-oauth auth provider + OAuth flow (integration tests)
+9. Docker API Proxy (integration tests)
+10. Fleet orchestration end-to-end (e2e tests)
 
 **Testing strategy:**
 - Unit tests for pure logic (config parsing, egress compilation, policy validation)
@@ -74,12 +76,13 @@ Fill in the implementations with integration tests driving development.
 - Claude Code adapter (claude-headless-to-acp)
 - Pi adapter (pi-rpc-to-acp)
 
-### Phase 6: Additional Bridges
-- Slack bridge
-- Discord bridge
+### Phase 6: Additional Channels
+- Slack channel provider
+- Discord channel provider
 
 ### Phase 7: Advanced Features
-- Policy advisor (denied requests → suggested rules)
+- Policy advisor (denied requests → suggested egress rules)
 - Fleet dashboard (web UI)
 - Remote gateway support (deploy to cloud)
+- External provider plugin mechanism
 - MicroVM compute driver support

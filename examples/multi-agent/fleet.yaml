@@ -1,147 +1,101 @@
-# Example: Multi-Agent Fleet with OAuth MCP
+# Example: Multi-Agent Fleet with OAuth MCP + Docker
 #
-# Advanced configuration with:
-# - Two agents (frontend + backend)
-# - Separate proxies for isolation
-# - OAuth integrations (Notion, Jira)
-# - Docker API Proxy for backend agent
-# - Multiple secret providers
+# Advanced configuration:
+# - Two agents (coder + reviewer), each with own Telegram bot
+# - Shared gateway for egress
+# - OAuth integrations (Notion, Jira) via /oauth command
+# - Docker API Proxy for coder agent
+# - Strict egress (no catch-all)
 #
 # Usage:
 #   1. Copy this file to fleet.yaml
 #   2. Create .env with your secrets
-#   3. Run: agent-fleet auth notion   (OAuth setup)
-#   4. Run: agent-fleet auth jira     (OAuth setup)
-#   5. Run: agent-fleet up
+#   3. Run: agent-fleet up
+#   4. In Telegram, send "/oauth notion" to authorize Notion
+#   5. In Telegram, send "/oauth jira" to authorize Jira
 
 fleet:
   name: dev-team
 
 agents:
-  frontend:
+  coder:
     runtime: codex
-    bridge: telegram
-    sandbox:
-      egress:
-        - host: api.github.com
-          port: 443
-          access: full
-        - host: api.openai.com
-          port: 443
-          access: full
-        - host: registry.npmjs.org
-          port: 443
-          access: read-only
-        - host: api.notion.com
-          port: 443
-          access: full
-      secrets:
-        env_file: .env
-        providers:
-          - openai
-          - github
-          - notion
+    gateway: gw-shared
+    channel:
+      provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
+      options:
+        bot_token_env: TELEGRAM_BOT_TOKEN_CODER
+        allowed_users: ["@coreyortea"]
+        groups:
+          "-100987654321":
+            allowed_users: ["*"]
+            required_mention: true
+    docker:
+      enabled: true
+      allowed_images:
+        - "node:20-*"
+        - "node:22-*"
+        - "python:3.12-*"
+        - "golang:1.22-*"
+        - "postgres:16-*"
+        - "redis:7-*"
+      max_containers: 5
+      resource_limits:
+        memory: "2g"
+        cpus: "2"
+        pids: 256
     env:
-      LOG_LEVEL: info
-
-  backend:
-    runtime: codex
-    bridge: telegram
-    sandbox:
-      egress:
-        - host: api.github.com
-          port: 443
-          access: full
-        - host: api.openai.com
-          port: 443
-          access: full
-        - host: "*.atlassian.net"
-          port: 443
-          access: full
-        - host: "*.datadoghq.com"
-          port: 443
-          access: read-only
-      secrets:
-        env_file: .env
-        providers:
-          - openai
-          - github
-          - jira
-          - datadog
-      docker:
-        enabled: true
-        allowed_images:
-          - "node:20-*"
-          - "python:3.12-*"
-          - "golang:1.22-*"
-          - "postgres:16-*"
-          - "redis:7-*"
-        max_containers: 5
-        resource_limits:
-          memory: "2g"
-          cpus: "2"
-          pids: 256
-    env:
+      GH_TOKEN: proxy_dummy_token
       LOG_LEVEL: debug
 
-bridges:
-  telegram:
-    type: telegram
-    token_env: TELEGRAM_BOT_TOKEN
-    allowed_chats:
-      - 123456789              # Your personal chat
-      - -100987654321          # Team group chat
-    sessions:
-      mode: per-chat
-      max_concurrent: 10
-      idle_timeout: 1h
-    commands:
-      start: "Start a new coding session"
-      reset: "Reset current session"
-      status: "Show agent status"
-      switch: "Switch between agents"
+  reviewer:
+    runtime: codex
+    gateway: gw-shared
+    channel:
+      provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
+      options:
+        bot_token_env: TELEGRAM_BOT_TOKEN_REVIEWER
+        allowed_users: ["@coreyortea"]
+    env:
+      GH_TOKEN: proxy_dummy_token
 
-secrets:
-  providers:
-    - name: openai
-      type: api-key
-      env: OPENAI_API_KEY
-      inject:
-        header: Authorization
-        prefix: "Bearer "
-        endpoints:
-          - host: api.openai.com
+gateways:
+  gw-shared:
+    egress:
+      # GitHub with PAT injection
+      - host: ["api.github.com", "github.com"]
+        auth:
+          provider: "github.com/donbader/agent-fleet/auth-providers/github-pat"
+          options:
+            token_env: GITHUB_PAT_TOKEN
 
-    - name: github
-      type: github-pat
-      env: GITHUB_TOKEN
+      # MCP OAuth endpoints (Notion, Jira)
+      # Tokens managed via /oauth command in chat
+      - endpoint: [https://mcp.notion.com/mcp, https://mcp.atlassian.com/v1/mcp]
+        auth:
+          provider: "github.com/donbader/agent-fleet/auth-providers/mcp-oauth"
 
-    - name: notion
-      type: oauth
-      provider: notion
-      client_id_env: NOTION_CLIENT_ID
-      client_secret_env: NOTION_CLIENT_SECRET
-      scopes:
-        - read_content
-        - update_content
+      # MCP with app credentials (Slack)
+      - endpoint: [https://mcp.slack.com/mcp]
+        auth:
+          provider: "github.com/donbader/agent-fleet/auth-providers/mcp-token"
+          options:
+            app_id_env: SLACK_APP_ID
+            app_secret_env: SLACK_APP_SECRET
 
-    - name: jira
-      type: oauth
-      provider: atlassian
-      client_id_env: JIRA_CLIENT_ID
-      client_secret_env: JIRA_CLIENT_SECRET
-      scopes:
-        - read:jira-work
-        - write:jira-work
-      cloud_id_env: JIRA_CLOUD_ID
+      # Datadog (read-only monitoring)
+      - host: ["*.datadoghq.com"]
+        auth:
+          provider: "github.com/donbader/agent-fleet/auth-providers/api-key"
+          options:
+            key_env: DD_API_KEY
+            header: DD-API-KEY
 
-    - name: datadog
-      type: api-key
-      env: DD_API_KEY
-      inject:
-        header: DD-API-KEY
-        endpoints:
-          - host: "*.datadoghq.com"
+      # Package registries (no auth needed)
+      - host: ["registry.npmjs.org", "pypi.org", "proxy.golang.org"]
 
-proxy:
-  shared: false    # Each agent gets its own proxy for isolation
+      # Telegram API (channel provider handles its own bot token)
+      - host: ["api.telegram.org"]
+
+      # NOTE: No catch-all "- host: ['*']" → strict mode
+      # Only the hosts listed above are reachable

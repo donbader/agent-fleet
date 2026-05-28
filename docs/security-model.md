@@ -2,11 +2,12 @@
 
 ## Principles
 
-1. **Default deny** — No network access unless explicitly allowed
-2. **Secrets never in sandbox** — Credentials exist only at the proxy boundary
+1. **Default deny** — No network access unless an egress rule matches
+2. **Secrets never in sandbox** — Credentials exist only in gateway auth providers
 3. **Least privilege** — Agent runs as unprivileged user with minimal capabilities
 4. **Defense in depth** — Multiple overlapping isolation layers
-5. **Controlled escalation** — Docker access is opt-in and policy-enforced
+5. **Channel owns its own credentials** — Bot tokens are channel provider's responsibility, not gateway's
+6. **Controlled escalation** — Docker access is opt-in and policy-enforced
 
 ## Isolation Layers (provided by OpenShell)
 
@@ -18,16 +19,15 @@
 │  │  Supervisor (root, manages sandbox)              │    │
 │  │                                                 │    │
 │  │  ┌─────────────────────────────────────────┐    │    │
-│  │  │  Agent (unprivileged, restricted)        │    │    │
+│  │  │  Agent + Channel (unprivileged)          │    │    │
 │  │  │                                         │    │    │
 │  │  │  • Landlock: filesystem whitelist       │    │    │
 │  │  │  • Seccomp: syscall filter              │    │    │
-│  │  │  • Network NS: forced through proxy     │    │    │
+│  │  │  • Network NS: forced through gateway   │    │    │
 │  │  │  • Cap-drop ALL: no capabilities        │    │    │
 │  │  │  • Non-root user                        │    │    │
 │  │  └─────────────────────────────────────────┘    │    │
 │  │                                                 │    │
-│  │  Policy Proxy (L7 inspection + credential inject)│    │
 │  └─────────────────────────────────────────────────┘    │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
@@ -35,83 +35,108 @@
 
 ## Egress Control
 
-All outbound traffic from the agent goes through OpenShell's policy proxy:
+All outbound traffic from the sandbox goes through the gateway proxy:
 
 ```
-Agent → Network Namespace → Policy Proxy → Internet
-                              │
-                              ├── Check: destination allowed by policy?
-                              ├── Check: calling binary trusted?
-                              ├── Check: L7 rules (method, path)?
-                              ├── Inject: credentials from provider store
-                              └── Block: if no rule matches (default deny)
+Agent/Channel → Network Namespace → Gateway Proxy → Internet
+                                      │
+                                      ├── Evaluate egress rules (first match wins)
+                                      ├── No match? → DENY (default deny)
+                                      ├── Match without auth? → ALLOW (passthrough)
+                                      └── Match with auth? → Inject credentials → ALLOW
 ```
 
-### Egress Rule Format
-
-Users define egress rules in `fleet.yaml`:
+### Egress Rule Evaluation
 
 ```yaml
-egress:
-  - host: api.github.com
-    port: 443
-    access: full              # GET, POST, PUT, DELETE, PATCH
+gateways:
+  gw-main:
+    egress:
+      # Rule 1: checked first
+      - host: ["api.github.com", "github.com"]
+        auth:
+          provider: "github.com/donbader/agent-fleet/auth-providers/github-pat"
+          options:
+            token_env: GITHUB_PAT_TOKEN
 
-  - host: api.openai.com
-    port: 443
-    access: full
+      # Rule 2: checked second
+      - endpoint: [https://mcp.notion.com/mcp]
+        auth:
+          provider: "github.com/donbader/agent-fleet/auth-providers/mcp-oauth"
 
-  - host: "*.npmjs.org"
-    port: 443
-    access: read-only         # GET, HEAD, OPTIONS only
-
-  - host: api.telegram.org
-    port: 443
-    access: full
-    # Bridge needs this — auto-added when bridge type is telegram
+      # Rule 3: catch-all (allow everything else without auth)
+      - host: ["*"]
 ```
 
-These compile to OpenShell network policy YAML at deploy time.
+**Evaluation order:**
+1. Request to `api.github.com` → matches Rule 1 → inject PAT → allow
+2. Request to `mcp.notion.com/mcp` → matches Rule 2 → inject OAuth token → allow
+3. Request to `registry.npmjs.org` → matches Rule 3 → allow (no auth)
+4. If no `- host: ["*"]` at end → request to `registry.npmjs.org` → DENIED
 
-### Access Levels
+### Strict Mode vs Permissive Mode
 
-| Level | HTTP Methods Allowed |
-|-------|---------------------|
-| `full` | All methods |
-| `read-only` | GET, HEAD, OPTIONS |
-| `write-only` | POST, PUT, PATCH, DELETE |
-| `custom` | Specify `methods: [GET, POST]` explicitly |
+```yaml
+# Strict: only listed hosts are reachable
+gateways:
+  strict-gw:
+    egress:
+      - host: ["api.github.com"]
+        auth: ...
+      # No catch-all → everything else is denied
+
+# Permissive: auth injection where needed, allow everything else
+gateways:
+  permissive-gw:
+    egress:
+      - host: ["api.github.com"]
+        auth: ...
+      - host: ["*"]              # Allow all other traffic
+```
 
 ## Credential Management
 
-### Flow
+### Separation of Concerns
+
+| Who | Manages What | How |
+|-----|-------------|-----|
+| **Channel provider** | Messaging platform credentials (bot token) | Reads from env, uses directly in API calls |
+| **Gateway auth provider** | Third-party API credentials (PAT, OAuth tokens) | Injects at L7 proxy boundary |
+| **Agent** | Nothing | Sees dummy tokens or no tokens at all |
+
+### Why the Agent Never Sees Real Credentials
 
 ```
-1. User puts secrets in .env file (local, never committed)
-2. `agent-fleet up` reads .env and creates OpenShell providers
-3. OpenShell stores credentials in gateway credential store
-4. At runtime, proxy injects credentials into matching requests
-5. Agent never sees raw credential values
+Agent env:
+  GH_TOKEN=proxy_dummy_token     ← dummy (so gh CLI doesn't error)
+
+Agent makes request:
+  GET https://api.github.com/repos/...
+  Authorization: token proxy_dummy_token
+
+Gateway intercepts:
+  - Strips: Authorization: token proxy_dummy_token
+  - Injects: Authorization: token ghp_REAL_TOKEN_HERE
+
+Forwarded to GitHub:
+  GET https://api.github.com/repos/...
+  Authorization: token ghp_REAL_TOKEN_HERE
 ```
 
-### Provider Types
-
-| Type | What It Does | Injection Method |
-|------|-------------|-----------------|
-| `generic` | Injects env var or header | Header rewrite on matching endpoint |
-| `github-pat` | GitHub Personal Access Token | `Authorization: token <pat>` on github.com |
-| `oauth` | OAuth2 with auto-refresh | `Authorization: Bearer <token>` with refresh |
-| `api-key` | API key injection | Custom header (e.g., `X-API-Key`, `Authorization: Bearer`) |
-
-### OAuth Flow (for MCP services like Notion, Jira)
+### OAuth Flow (MCP Services)
 
 ```
-1. User runs `agent-fleet auth notion`
-2. CLI opens browser for OAuth consent
-3. Callback receives tokens
-4. Tokens stored as OpenShell provider with refresh config
-5. Provider auto-refreshes tokens before expiry
-6. Agent's MCP calls to Notion API get Bearer token injected
+1. User: /oauth notion
+2. Channel: "Click to authorize: https://api.notion.com/v1/oauth/authorize?..."
+3. User: [clicks, authorizes in browser]
+4. User: /oauth callback https://redirect.example.com?code=abc123
+5. Channel → Gateway: exchange code for tokens
+6. Gateway mcp-oauth provider:
+   - POST https://api.notion.com/v1/oauth/token (code → access_token)
+   - Stores access_token + refresh_token
+   - Schedules auto-refresh before expiry
+7. Future requests to mcp.notion.com:
+   - Gateway injects: Authorization: Bearer <fresh_token>
 ```
 
 ## Docker API Proxy Security
@@ -130,30 +155,6 @@ When `docker.enabled: true`, a Docker API Proxy runs alongside the sandbox:
 | Resource exhaustion | Per-agent container count + resource limits |
 | Credential theft via Docker inspect | New containers don't get provider credentials |
 
-### Policy Enforcement
-
-```yaml
-docker:
-  enabled: true
-  allowed_images:
-    - "node:20-*"
-    - "python:3.12-*"
-    - "golang:1.22-*"
-    - "ubuntu:24.04"
-  denied_options:
-    - privileged
-    - network=host
-    - cap-add
-    - pid=host
-    - ipc=host
-  resource_limits:
-    memory: "2g"
-    cpus: "2"
-    pids: 256
-  max_containers: 5
-  network: inherit    # New containers join sandbox's internal network
-```
-
 ### Why Recursive Spawning Can't Happen
 
 ```
@@ -170,7 +171,7 @@ Agent (in OpenShell sandbox)
         - ❌ Cannot create new containers
 ```
 
-Only the original sandbox agent has the authentication token to talk to the Docker API Proxy. Agent-spawned containers are plain Docker containers with no proxy access.
+Only the original sandbox agent has the authentication token to talk to the Docker API Proxy.
 
 ## Network Topology
 
@@ -179,26 +180,29 @@ Only the original sandbox agent has the authentication token to talk to the Dock
 │  Host                                                        │
 │                                                             │
 │  ┌─ OpenShell Gateway ────────────────────────────────────┐  │
-│  │  - Credential store                                    │  │
-│  │  - Policy delivery                                     │  │
 │  │  - Sandbox lifecycle                                   │  │
+│  │  - Policy delivery                                     │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                             │
-│  ┌─ Internal Network (openshell bridge) ──────────────────┐  │
+│  ┌─ Internal Network ─────────────────────────────────────┐  │
 │  │                                                        │  │
-│  │  ┌─ Sandbox ─────────────────────────────────────────┐ │  │
-│  │  │  Agent + Bridge                                   │ │  │
-│  │  │  All egress → Policy Proxy → Internet             │ │  │
+│  │  ┌─ Sandbox (Agent + Channel) ───────────────────────┐ │  │
+│  │  │  All egress → Gateway Proxy                       │ │  │
+│  │  │  Channel talks to Telegram (bot token in request) │ │  │
 │  │  └──────────────────────────────────────────────────┘ │  │
 │  │                                                        │  │
+│  │  ┌─ Gateway Proxy (gw-main) ────────────────────────┐ │  │
+│  │  │  Egress rules + auth injection                   │ │  │
+│  │  │  OAuth token storage                             │ │  │
+│  │  └─────────────────────────────────────────────────┘ │  │
+│  │                                                        │  │
 │  │  ┌─ Docker API Proxy (optional) ────────────────────┐ │  │
-│  │  │  Listens on internal network                     │ │  │
-│  │  │  Forwards to Docker daemon (host)                │ │  │
+│  │  │  Policy enforcement for container creation       │ │  │
 │  │  └─────────────────────────────────────────────────┘ │  │
 │  │                                                        │  │
 │  │  ┌─ Agent-spawned containers ───────────────────────┐ │  │
 │  │  │  Also on internal network                        │ │  │
-│  │  │  Egress also goes through policy proxy           │ │  │
+│  │  │  Egress also goes through gateway proxy          │ │  │
 │  │  └─────────────────────────────────────────────────┘ │  │
 │  │                                                        │  │
 │  └────────────────────────────────────────────────────────┘  │
@@ -210,8 +214,8 @@ Only the original sandbox agent has the authentication token to talk to the Dock
 
 | Boundary | What Crosses It | Control |
 |----------|----------------|---------|
-| Sandbox → Internet | HTTP requests | Policy proxy (L7 inspection) |
+| Sandbox → Internet | HTTP requests | Gateway proxy (egress rules + auth injection) |
 | Agent → Docker | Container API calls | Docker API Proxy (policy enforcement) |
-| User → Agent | Chat messages | Bridge (ACP protocol) |
-| Agent → MCP servers | Tool calls | Egress policy + credential injection |
-| Host → Sandbox | Credentials | OpenShell provider injection (never raw) |
+| User → Agent | Chat messages | Channel provider (ACP protocol) |
+| Agent → MCP servers | Tool calls | Gateway egress rules + mcp-oauth provider |
+| .env → Gateway | Raw credentials | Read at startup, never forwarded to sandbox |

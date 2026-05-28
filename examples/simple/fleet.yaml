@@ -1,10 +1,10 @@
-# Example: Single Agent with Telegram Bridge
+# Example: Single Agent with Telegram
 #
-# This is the simplest useful configuration:
+# Simplest useful configuration:
 # - One Codex agent
-# - Telegram bridge for messaging
-# - GitHub access with PAT
-# - OpenAI API access for the agent runtime
+# - Telegram channel (own bot)
+# - GitHub access with PAT injection
+# - Allow all other traffic
 #
 # Usage:
 #   1. Copy this file to fleet.yaml
@@ -17,46 +17,24 @@ fleet:
 agents:
   coder:
     runtime: codex
-    bridge: telegram
-    sandbox:
-      egress:
-        - host: api.github.com
-          port: 443
-          access: full
-        - host: api.openai.com
-          port: 443
-          access: full
-        - host: registry.npmjs.org
-          port: 443
-          access: read-only
-      secrets:
-        env_file: .env
-        providers:
-          - openai
-          - github
+    gateway: gw-main
+    channel:
+      provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
+      options:
+        bot_token_env: TELEGRAM_BOT_TOKEN
+        allowed_users: ["@myusername"]
+    env:
+      GH_TOKEN: proxy_dummy_token
 
-bridges:
-  telegram:
-    type: telegram
-    token_env: TELEGRAM_BOT_TOKEN
-    allowed_chats:
-      - 123456789              # Replace with your chat ID
-    sessions:
-      mode: per-chat
-      max_concurrent: 5
-      idle_timeout: 30m
+gateways:
+  gw-main:
+    egress:
+      # GitHub with PAT injection
+      - host: ["api.github.com", "github.com"]
+        auth:
+          provider: "github.com/donbader/agent-fleet/auth-providers/github-pat"
+          options:
+            token_env: GITHUB_PAT_TOKEN
 
-secrets:
-  providers:
-    - name: openai
-      type: api-key
-      env: OPENAI_API_KEY
-      inject:
-        header: Authorization
-        prefix: "Bearer "
-        endpoints:
-          - host: api.openai.com
-
-    - name: github
-      type: github-pat
-      env: GITHUB_TOKEN
+      # Allow all other traffic (no auth injection)
+      - host: ["*"]

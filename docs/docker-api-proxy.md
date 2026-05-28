@@ -45,53 +45,35 @@ The Docker API Proxy prevents this by intercepting and validating every Docker A
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## API Surface
+## Configuration
 
-The proxy exposes a subset of the Docker Engine API. It's compatible with standard Docker clients — the agent just sets `DOCKER_HOST`.
-
-### Allowed Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/containers/create` | POST | Create a container (validated) |
-| `/containers/{id}/start` | POST | Start a container |
-| `/containers/{id}/stop` | POST | Stop a container |
-| `/containers/{id}/kill` | POST | Kill a container |
-| `/containers/{id}` | DELETE | Remove a container |
-| `/containers/{id}/json` | GET | Inspect a container |
-| `/containers/{id}/logs` | GET | Get container logs |
-| `/containers/{id}/exec` | POST | Create exec instance |
-| `/exec/{id}/start` | POST | Start exec instance |
-| `/images/json` | GET | List images |
-| `/images/create` | POST | Pull an image (validated against allowlist) |
-
-### Blocked Endpoints
-
-| Endpoint | Reason |
-|----------|--------|
-| `/volumes/*` | Prevent host filesystem access |
-| `/networks/*` | Prevent network manipulation |
-| `/swarm/*` | Prevent cluster operations |
-| `/secrets/*` | Prevent secret access |
-| `/configs/*` | Prevent config access |
-| `/system/*` | Prevent system info leakage |
+```yaml
+# In fleet.yaml
+agents:
+  coder:
+    runtime: codex
+    gateway: gw-main
+    channel: ...
+    docker:
+      enabled: true
+      allowed_images:
+        - "node:20-*"
+        - "python:3.12-*"
+        - "golang:1.22-*"
+        - "postgres:16-*"
+        - "redis:7-*"
+      max_containers: 5
+      resource_limits:
+        memory: "2g"
+        cpus: "2"
+        pids: 256
+```
 
 ## Policy Enforcement
 
 ### On Container Create (`/containers/create`)
 
 The proxy validates and mutates the create request:
-
-```go
-type DockerPolicy struct {
-    AllowedImages    []string  // Glob patterns: ["node:20-*", "python:3.12-*"]
-    DeniedOptions    []string  // ["privileged", "network=host", "cap-add"]
-    MaxContainers    int       // Per-agent limit
-    ResourceLimits   Resources // Forced on every container
-    Network          string    // Force this network (e.g., "openshell_internal")
-    Labels           map[string]string // Auto-applied labels for tracking
-}
-```
 
 **Validation checks:**
 
@@ -110,7 +92,7 @@ type DockerPolicy struct {
 
 | Field | Forced Value |
 |-------|-------------|
-| `NetworkMode` | `openshell_internal` (or sandbox network) |
+| `NetworkMode` | Internal network (same as sandbox) |
 | `Memory` | Policy limit (e.g., 2GB) |
 | `NanoCPUs` | Policy limit (e.g., 2 CPUs) |
 | `PidsLimit` | Policy limit (e.g., 256) |
@@ -126,6 +108,33 @@ type DockerPolicy struct {
 4. If allowed → forward to Docker daemon
 ```
 
+## Allowed API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/containers/create` | POST | Create a container (validated) |
+| `/containers/{id}/start` | POST | Start a container |
+| `/containers/{id}/stop` | POST | Stop a container |
+| `/containers/{id}/kill` | POST | Kill a container |
+| `/containers/{id}` | DELETE | Remove a container |
+| `/containers/{id}/json` | GET | Inspect a container |
+| `/containers/{id}/logs` | GET | Get container logs |
+| `/containers/{id}/exec` | POST | Create exec instance |
+| `/exec/{id}/start` | POST | Start exec instance |
+| `/images/json` | GET | List images |
+| `/images/create` | POST | Pull an image (validated) |
+
+### Blocked Endpoints
+
+| Endpoint | Reason |
+|----------|--------|
+| `/volumes/*` | Prevent host filesystem access |
+| `/networks/*` | Prevent network manipulation |
+| `/swarm/*` | Prevent cluster operations |
+| `/secrets/*` | Prevent secret access |
+| `/configs/*` | Prevent config access |
+| `/system/*` | Prevent system info leakage |
+
 ## Authentication
 
 The proxy authenticates requests using a sandbox-scoped token:
@@ -140,7 +149,7 @@ Proxy validates:
   - Token not expired
 ```
 
-Agent-spawned containers do NOT receive this token, so they cannot talk to the proxy.
+Agent-spawned containers do NOT receive this token — they cannot talk to the proxy.
 
 ## Lifecycle Management
 
@@ -155,60 +164,25 @@ When the sandbox is destroyed, the proxy cleans up all agent-spawned containers:
 4. Proxy removes itself
 ```
 
-### Health Monitoring
+## Network Behavior
 
-The proxy tracks container health and enforces timeouts:
+New containers join the same internal network as the sandbox. Their egress also goes through the gateway proxy:
 
-```yaml
-docker:
-  container_timeout: 1h        # Kill containers running longer than 1h
-  idle_timeout: 10m            # Kill containers idle for 10m
-  health_check_interval: 30s   # Check container health every 30s
+```
+Agent-spawned container
+  → makes HTTP request
+  → hits internal network
+  → routed through gateway proxy
+  → egress rules apply (same as agent)
 ```
 
-## Configuration
-
-```yaml
-# In fleet.yaml
-agents:
-  coder:
-    sandbox:
-      docker:
-        enabled: true
-        
-        # Image allowlist (glob patterns)
-        allowed_images:
-          - "node:20-*"
-          - "node:22-*"
-          - "python:3.11-*"
-          - "python:3.12-*"
-          - "golang:1.22-*"
-          - "golang:1.23-*"
-          - "ubuntu:24.04"
-          - "postgres:16-*"
-          - "redis:7-*"
-          - "mongo:7-*"
-        
-        # Hard limits
-        max_containers: 5
-        
-        # Resource limits per container
-        resource_limits:
-          memory: "2g"
-          cpus: "2"
-          pids: 256
-        
-        # Timeouts
-        container_timeout: 1h
-        idle_timeout: 10m
-        
-        # Network behavior
-        network: inherit    # Join sandbox's internal network
-```
+This means agent-spawned containers:
+- ✅ Can reach allowed hosts
+- ✅ Get credential injection where configured
+- ❌ Cannot bypass egress rules
+- ❌ Cannot reach the Docker API Proxy (no auth token)
 
 ## Implementation Notes
-
-### Technology Choice
 
 The Docker API Proxy is a small Go binary (~500 lines core logic):
 - HTTP reverse proxy with request interception
@@ -217,27 +191,4 @@ The Docker API Proxy is a small Go binary (~500 lines core logic):
 - JWT validation for authentication
 - Docker client for cleanup operations
 
-### Deployment
-
-The proxy runs as a container on the OpenShell bridge network:
-- Accessible from sandbox via network policy
-- Has Docker socket mounted (it's the only thing that does)
-- Managed by agent-fleet lifecycle
-
-```
-agent-fleet up
-  → Creates OpenShell sandbox (agent + bridge)
-  → Starts Docker API Proxy container (if docker.enabled)
-  → Configures network policy to allow sandbox → proxy
-  → Injects DOCKER_HOST env var into sandbox
-```
-
-## Comparison with Alternatives
-
-| Approach | Security | Complexity | Agent UX |
-|----------|----------|-----------|----------|
-| **Docker API Proxy** (ours) | ✅ Policy-enforced | Medium | ✅ Standard Docker client |
-| Raw Docker socket | ❌ Full host access | Low | ✅ Standard Docker client |
-| Sysbox (rootless nested) | ⚠️ Partial | High | ✅ Standard Docker client |
-| No Docker access | ✅ Maximum | None | ❌ Agent can't run containers |
-| Gateway-mediated (OpenShell style) | ✅ Good | High | ❌ Custom API needed |
+Deployed as a container on the internal network, managed by agent-fleet lifecycle.

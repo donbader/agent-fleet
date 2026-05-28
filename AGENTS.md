@@ -5,10 +5,10 @@ You are working on `agent-fleet` — an opinionated agent sandbox orchestrator w
 ## Project Overview
 
 agent-fleet deploys AI coding agents (Codex, Claude Code, Pi) inside OpenShell sandboxes with:
-- Mandatory egress control (all outbound traffic goes through a policy proxy)
-- Messaging bridges (Telegram, Slack) speaking ACP protocol
+- Default-deny egress control (all outbound traffic goes through a gateway proxy)
+- Per-agent messaging channels (Telegram bots) speaking ACP protocol
 - Fleet management (multiple agents from one config)
-- Credential injection at the network boundary (secrets never enter the sandbox)
+- Credential injection at the network boundary via auth providers
 - Optional Docker API Proxy for controlled container spawning
 
 ## Repository Structure
@@ -19,18 +19,21 @@ agent-fleet/
 ├── pkg/
 │   ├── config/               # fleet.yaml parsing and validation
 │   ├── sandbox/              # OpenShell sandbox provisioning
-│   ├── bridge/               # Bridge lifecycle and ACP protocol
-│   ├── egress/               # Egress rule compilation and proxy config
+│   ├── channel/              # Channel provider lifecycle and ACP protocol
+│   ├── gateway/              # Gateway proxy + egress rule compilation
+│   ├── auth-providers/       # Credential injection implementations
+│   │   ├── github-pat/       # GitHub PAT injection
+│   │   ├── mcp-oauth/       # MCP OAuth2 flow + token refresh
+│   │   ├── mcp-token/       # MCP app credential injection
+│   │   └── api-key/         # Generic API key injection
 │   ├── docker-proxy/         # Docker API Proxy implementation
 │   ├── fleet/                # Fleet orchestration (up/down/status)
 │   └── adapters/             # Protocol adapters (pi-rpc-to-acp, etc.)
-├── bridges/
-│   └── telegram/             # Telegram bridge Docker image
-├── docker-proxy/             # Docker API Proxy Docker image
+├── channel-providers/
+│   └── telegram/             # Telegram channel provider
 ├── docs/                     # Architecture and design documents
 ├── examples/                 # Example fleet configurations
 ├── tests/                    # Integration tests
-├── fleet.yaml                # Example fleet config (for development)
 └── go.mod
 ```
 
@@ -38,13 +41,47 @@ agent-fleet/
 
 1. **OpenShell is the sandbox layer** — We don't build our own sandbox. OpenShell handles isolation (Landlock, seccomp, network namespace). We orchestrate on top.
 
-2. **ACP is the bridge protocol** — All bridges speak ACP (Agent Client Protocol). Agents that don't support ACP natively get a translation adapter.
+2. **Default deny egress** — No traffic leaves the sandbox unless an egress rule matches. Use `- host: ["*"]` as catch-all to allow all.
 
-3. **Secrets never enter the sandbox** — Credentials are stored in OpenShell providers and injected at the L7 proxy boundary. The agent process never sees raw tokens.
+3. **Channel per agent** — Each agent has its own bot/channel instance. No shared bots with routing complexity.
 
-4. **Docker API Proxy is optional** — When enabled, agents can spin up containers through a policy-enforcing proxy. New containers join the same controlled network.
+4. **Auth at the gateway boundary** — Auth providers inject credentials into matching requests at the L7 proxy. Agent never sees real tokens.
 
-5. **Single config file** — Everything is defined in `fleet.yaml`. No scattered configs.
+5. **Provider pattern** — Channels and auth use Go module path identifiers (e.g., `github.com/donbader/agent-fleet/auth-providers/github-pat`). Built-in for now, extensible later.
+
+6. **Gateways are shareable** — Multiple agents can reference the same gateway for shared egress rules and auth.
+
+7. **OAuth via chat** — Users authorize OAuth services by sending `/oauth <provider>` in their chat with the bot.
+
+## Configuration Format
+
+See `docs/configuration.md` for full reference. Key concepts:
+
+```yaml
+fleet:
+  name: my-fleet
+
+agents:
+  <name>:
+    runtime: codex | claude-code | pi
+    gateway: <gateway-name>
+    channel:
+      provider: "<provider-path>"
+      options: { ... }
+    docker: { enabled: true, ... }    # optional
+    env: { ... }
+
+gateways:
+  <name>:
+    egress:
+      - host: [...]                   # domain match
+        auth:                         # optional credential injection
+          provider: "<provider-path>"
+          options: { ... }
+      - endpoint: [...]               # full URL match (for MCP)
+        auth: { ... }
+      - host: ["*"]                   # catch-all (allow remaining)
+```
 
 ## Development Workflow
 
@@ -75,12 +112,13 @@ golangci-lint run
 
 - [OpenShell](https://github.com/NVIDIA/OpenShell) — Sandbox runtime (CLI: `openshell`)
 - [ACP SDK](https://github.com/anthropics/agent-client-protocol) — Agent Client Protocol
-- [grammy](https://grammy.dev/) — Telegram bot framework (for bridge, Node.js sidecar)
+- [grammy](https://grammy.dev/) — Telegram bot framework (for channel provider, Node.js)
 - Docker Engine — Container runtime
 
 ## What NOT to Do
 
 - Don't bypass OpenShell — all sandbox operations go through `openshell` CLI or API
-- Don't store secrets in fleet.yaml — use `.env` files referenced by `env_file:`
+- Don't store secrets in fleet.yaml — use `.env` files referenced by `*_env` options
 - Don't add features that only work with one agent runtime — keep it agent-agnostic
-- Don't mix bridge protocol concerns with agent protocol concerns
+- Don't mix channel concerns with gateway concerns (channel = messaging, gateway = egress + auth)
+- Don't inject Telegram bot tokens via gateway — channel provider manages its own platform credentials
