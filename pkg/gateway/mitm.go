@@ -172,7 +172,7 @@ func (g *Gateway) performHTTPInjection(clientConn net.Conn, host string, rule co
 	}
 
 	// Pipe the response back
-	io.Copy(clientConn, upstream)
+	_, _ = io.Copy(clientConn, upstream)
 }
 
 // applyInjection modifies an HTTP request based on the egress rule provider.
