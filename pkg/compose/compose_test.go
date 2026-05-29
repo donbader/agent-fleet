@@ -51,8 +51,8 @@ func TestGenerate_SimpleFleet(t *testing.T) {
 	if gw.Build == nil {
 		t.Fatal("gateway should have build config")
 	}
-	if gw.Build.Context != "/repo" {
-		t.Errorf("gateway build context = %q, want /repo", gw.Build.Context)
+	if gw.Build.Context != "/repo/images/gateway" {
+		t.Errorf("gateway build context = %q, want /repo/images/gateway", gw.Build.Context)
 	}
 
 	// Agent service — should use build

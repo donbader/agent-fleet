@@ -81,8 +81,8 @@ func (g *Generator) Generate() ([]byte, error) {
 func (g *Generator) gatewayService() *Service {
 	return &Service{
 		Build: &BuildConfig{
-			Context:    g.repoRoot,
-			Dockerfile: filepath.Join("images", "gateway", "Dockerfile"),
+			Context:    filepath.Join(g.repoRoot, "images", "gateway"),
+			Dockerfile: "Dockerfile",
 		},
 		Networks: []string{g.internalNetworkName(), g.externalNetworkName()},
 		Volumes:  []string{"./gateway-rules.yaml:/etc/gateway/rules.yaml:ro"},
