@@ -173,21 +173,28 @@ func (g *Gateway) handlePlaintext(conn net.Conn) {
 		return
 	}
 
+	// Parse port from host (if present)
+	hostname, port := host, 80
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		hostname = h
+		fmt.Sscanf(p, "%d", &port)
+	}
+
 	// Match against rules
-	rule, matched := matchRule(g.rules, host)
+	rule, matched := matchRule(g.rules, hostname)
 	if !matched {
-		log.Printf("[gateway] DENY: %s (no matching rule)", host)
+		log.Printf("[gateway] DENY: %s (no matching rule)", hostname)
 		return
 	}
 
-	log.Printf("[gateway] ALLOW: %s (provider: %s)", host, rule.Provider)
+	log.Printf("[gateway] ALLOW: %s (provider: %s)", hostname, rule.Provider)
 
 	if rule.Provider == "" {
 		// Passthrough
-		g.passthrough(remaining, host, 80)
+		g.passthrough(remaining, hostname, port)
 	} else {
 		// Inject credentials into HTTP request
-		g.injectHTTP(remaining, host, rule)
+		g.injectHTTP(remaining, hostname, rule)
 	}
 }
 

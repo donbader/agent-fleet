@@ -16,38 +16,40 @@ agent-fleet deploys AI coding agents (Codex, Claude Code, Pi) inside Docker cont
 
 ```
 agent-fleet/
-├── cmd/agent-fleet/          # CLI entrypoint
+├── cmd/agent-fleet/          # CLI entrypoint (up, down, status, validate)
 ├── pkg/
 │   ├── config/               # fleet.yaml + agent.yaml parsing and validation
-│   ├── compose/              # Docker Compose generation
-│   ├── gateway/              # Transparent proxy (Go, iptables + TLS MITM)
+│   ├── compose/              # Docker Compose generation from resolved fleet
+│   ├── gateway/              # Transparent proxy (listener, SNI, rule matching, MITM)
+│   │   ├── gateway.go        # TCP proxy server, connection handling, passthrough
+│   │   ├── matcher.go        # Host pattern matching (exact, wildcard, suffix)
+│   │   ├── sni.go            # TLS ClientHello parsing, SNI extraction
+│   │   └── mitm.go           # MITM TLS + credential injection (telegram, github, api-key)
 │   ├── bridge/               # channels-bridge runtime (spawns agent + manages channels)
-│   ├── egress-rules/         # Egress rule provider implementations
-│   │   ├── github-pat/       # GitHub PAT injection
-│   │   ├── mcp-oauth/       # MCP OAuth2 flow + token refresh
-│   │   ├── mcp-token/       # MCP app credential injection
-│   │   ├── docker-api-proxy/ # Docker API Proxy + DinD
-│   │   └── api-key/         # Generic API key injection
-│   ├── fleet/                # Fleet orchestration (up/down/status)
-│   └── adapters/             # Protocol adapters (pi-rpc-to-acp, etc.)
-├── runtimes/
-│   ├── codex/                # Codex runtime provider (+ schema.json)
-│   ├── claude-code/          # Claude Code runtime provider (+ schema.json)
-│   ├── pi/                   # Pi runtime provider (+ schema.json)
-│   └── channels-bridge/      # channels-bridge runtime (+ schema.json)
-├── channel-providers/
-│   └── telegram/             # Telegram channel provider (+ schema.json)
+│   │   ├── bridge.go         # Bridge runtime (Run, routing, shutdown)
+│   │   ├── process.go        # Agent process management (spawn, ACP pipes)
+│   │   ├── acp.go            # ACP message types and JSON wire format
+│   │   └── channel.go        # ChannelProvider interface + message types
+│   ├── channel/
+│   │   └── telegram/         # Telegram channel provider (long-poll, commands, filtering)
+│   ├── fleet/                # Fleet orchestration (up/down/status via docker compose)
+│   └── compose/              # Docker Compose YAML generation
 ├── schemas/
 │   ├── fleet.schema.json     # Top-level fleet.yaml validation
 │   └── agent.schema.json     # Top-level agent.yaml validation
-├── images/
-│   ├── sandbox/              # Base sandbox Dockerfile (iptables + CA + proxy)
-│   └── docker-proxy/        # Docker API Proxy Dockerfile
+├── tests/
+│   └── integration/          # Integration tests (proxy passthrough, MITM, deny)
 ├── docs/                     # Architecture and design documents
 ├── examples/                 # Example fleet configurations
-├── tests/                    # Integration tests
+├── Makefile                  # Build, test, lint targets
 └── go.mod
 ```
+
+### Planned (not yet implemented)
+
+- `images/sandbox/` — Base sandbox Dockerfile (iptables + CA + proxy)
+- `images/docker-proxy/` — Docker API Proxy Dockerfile
+- MCP OAuth2 flow (Notion dynamic client registration)
 
 ## Key Design Decisions
 
