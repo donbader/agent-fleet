@@ -47,9 +47,8 @@ agent-fleet/
 
 ### Planned (not yet implemented)
 
-- `images/sandbox/` — Base sandbox Dockerfile (iptables + CA + proxy)
-- `images/docker-proxy/` — Docker API Proxy Dockerfile
 - MCP OAuth2 flow (Notion dynamic client registration)
+- Docker API Proxy (DinD container)
 
 ## Key Design Decisions
 

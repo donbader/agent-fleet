@@ -26,7 +26,7 @@ func TestGenerate_SimpleFleet(t *testing.T) {
 		},
 	}
 
-	gen := New(fleet)
+	gen := New(fleet, "/repo")
 	data, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Generate() error: %v", err)
@@ -43,22 +43,28 @@ func TestGenerate_SimpleFleet(t *testing.T) {
 		t.Errorf("services count = %d, want 2", len(compose.Services))
 	}
 
-	// Gateway service
+	// Gateway service — should use build
 	gw := compose.Services["myfleet-gateway"]
 	if gw == nil {
 		t.Fatal("gateway service not found")
 	}
-	if gw.Image != "ghcr.io/donbader/agent-fleet/gateway:latest" {
-		t.Errorf("gateway image = %q", gw.Image)
+	if gw.Build == nil {
+		t.Fatal("gateway should have build config")
+	}
+	if gw.Build.Context != "/repo" {
+		t.Errorf("gateway build context = %q, want /repo", gw.Build.Context)
 	}
 
-	// Agent service
+	// Agent service — should use build
 	agent := compose.Services["coder"]
 	if agent == nil {
 		t.Fatal("coder service not found")
 	}
-	if agent.Image != "ghcr.io/donbader/agent-fleet/codex:latest" {
-		t.Errorf("coder image = %q", agent.Image)
+	if agent.Build == nil {
+		t.Fatal("coder should have build config")
+	}
+	if agent.Build.Context != "/repo/images/sandbox" {
+		t.Errorf("coder build context = %q, want /repo/images/sandbox", agent.Build.Context)
 	}
 	if len(agent.CapAdd) == 0 || agent.CapAdd[0] != "NET_ADMIN" {
 		t.Errorf("coder cap_add = %v, want [NET_ADMIN]", agent.CapAdd)
@@ -100,7 +106,7 @@ func TestGenerate_MultiAgent(t *testing.T) {
 		},
 	}
 
-	gen := New(fleet)
+	gen := New(fleet, "/repo")
 	data, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Generate() error: %v", err)
@@ -125,13 +131,16 @@ func TestGenerate_MultiAgent(t *testing.T) {
 		t.Errorf("coder EDITOR = %q, want vim", coder.Environment["EDITOR"])
 	}
 
-	// Reviewer uses claude-code image
+	// Reviewer uses sandbox build
 	reviewer := compose.Services["reviewer"]
 	if reviewer == nil {
 		t.Fatal("reviewer service not found")
 	}
-	if reviewer.Image != "ghcr.io/donbader/agent-fleet/claude-code:latest" {
-		t.Errorf("reviewer image = %q", reviewer.Image)
+	if reviewer.Build == nil {
+		t.Fatal("reviewer should have build config")
+	}
+	if reviewer.Build.Context != "/repo/images/sandbox" {
+		t.Errorf("reviewer build context = %q", reviewer.Build.Context)
 	}
 }
 
@@ -158,7 +167,7 @@ func TestGenerate_WithBuildContext(t *testing.T) {
 		},
 	}
 
-	gen := New(fleet)
+	gen := New(fleet, "/repo")
 	data, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Generate() error: %v", err)
@@ -176,11 +185,8 @@ func TestGenerate_WithBuildContext(t *testing.T) {
 	if coder.Build == nil {
 		t.Fatal("coder should have build config")
 	}
-	if coder.Build.Context != "./agents/coder" {
-		t.Errorf("build context = %q, want ./agents/coder", coder.Build.Context)
-	}
-	if coder.Image != "" {
-		t.Errorf("image should be empty when build is set, got %q", coder.Image)
+	if coder.Build.Context != "/repo/agents/coder" {
+		t.Errorf("build context = %q, want /repo/agents/coder", coder.Build.Context)
 	}
 }
 
@@ -201,7 +207,7 @@ func TestGenerate_AgentDependsOnGateway(t *testing.T) {
 		},
 	}
 
-	gen := New(fleet)
+	gen := New(fleet, "/repo")
 	data, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Generate() error: %v", err)
