@@ -8,6 +8,7 @@ import (
 	"log"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/donbader/agent-fleet/pkg/config"
 	"github.com/donbader/agent-fleet/pkg/provider"
@@ -16,8 +17,9 @@ import (
 
 // ComposeFile represents a docker-compose.yml structure.
 type ComposeFile struct {
-	Services map[string]*Service `yaml:"services"`
-	Networks map[string]*Network `yaml:"networks"`
+	Services map[string]*Service       `yaml:"services"`
+	Networks map[string]*Network       `yaml:"networks"`
+	Volumes  map[string]*VolumeConfig  `yaml:"volumes,omitempty"`
 }
 
 // Service represents a Docker Compose service.
@@ -44,6 +46,9 @@ type BuildConfig struct {
 type Network struct {
 	Internal bool `yaml:"internal,omitempty"`
 }
+
+// VolumeConfig represents a top-level volume declaration.
+type VolumeConfig struct{}
 
 // RenderContext is the JSON input passed to a provider's render script via stdin.
 type RenderContext struct {
@@ -88,6 +93,12 @@ func (g *Generator) Generate() ([]byte, error) {
 			return nil, fmt.Errorf("generating service for agent %q: %w", name, err)
 		}
 		compose.Services[name] = svc
+	}
+
+	// Collect named volumes from all services and declare them top-level
+	volumes := collectNamedVolumes(compose.Services)
+	if len(volumes) > 0 {
+		compose.Volumes = volumes
 	}
 
 	return yaml.Marshal(compose)
@@ -233,13 +244,35 @@ func (g *Generator) executeRenderScript(providerDir string, name string, agent *
 }
 
 func (g *Generator) gatewayServiceName() string {
-	return fmt.Sprintf("%s-gateway", g.fleet.Fleet.Fleet.Name)
+	return "gateway"
 }
 
 func (g *Generator) internalNetworkName() string {
-	return fmt.Sprintf("%s-internal", g.fleet.Fleet.Fleet.Name)
+	return "internal"
 }
 
 func (g *Generator) externalNetworkName() string {
-	return fmt.Sprintf("%s-external", g.fleet.Fleet.Fleet.Name)
+	return "external"
+}
+
+// collectNamedVolumes scans all services for named volume references
+// and returns them as top-level volume declarations.
+// Named volumes are those that don't start with "." or "/" (bind mounts).
+func collectNamedVolumes(services map[string]*Service) map[string]*VolumeConfig {
+	volumes := make(map[string]*VolumeConfig)
+	for _, svc := range services {
+		for _, v := range svc.Volumes {
+			// Split on ":" to get the source part
+			parts := strings.SplitN(v, ":", 2)
+			source := parts[0]
+			// Named volumes don't start with "." or "/"
+			if len(source) > 0 && source[0] != '.' && source[0] != '/' {
+				volumes[source] = &VolumeConfig{}
+			}
+		}
+	}
+	if len(volumes) == 0 {
+		return nil
+	}
+	return volumes
 }
