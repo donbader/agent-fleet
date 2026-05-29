@@ -12,6 +12,8 @@ import (
 var (
 	fleetFile string
 	version   = "dev"
+	commit    = "none"
+	date      = "unknown"
 )
 
 var rootCmd = &cobra.Command{
