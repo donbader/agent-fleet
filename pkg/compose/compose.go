@@ -82,11 +82,44 @@ func (g *Generator) gatewayService() *Service {
 			Dockerfile: filepath.Join("images", "gateway", "Dockerfile"),
 		},
 		Networks: []string{g.internalNetworkName(), g.externalNetworkName()},
+		Volumes:  []string{"./gateway-rules.yaml:/etc/gateway/rules.yaml:ro"},
 		Environment: map[string]string{
 			"FLEET_NAME": g.fleet.Fleet.Fleet.Name,
 		},
 		Restart: "unless-stopped",
 	}
+}
+
+// GatewayRulesYAML generates the gateway rules config file content.
+// This file is mounted into the gateway container at /etc/gateway/rules.yaml.
+func (g *Generator) GatewayRulesYAML() ([]byte, error) {
+	// Compile all rules from all presets in order
+	var allRules []config.EgressRule
+	for _, name := range g.fleet.Fleet.Agents {
+		agent := g.fleet.Agents[name]
+		for _, presetName := range agent.Egress {
+			preset, ok := g.fleet.Fleet.EgressPresets[presetName]
+			if ok {
+				allRules = append(allRules, preset...)
+			}
+		}
+	}
+
+	// Deduplicate rules (same host pattern + provider)
+	seen := make(map[string]bool)
+	var unique []config.EgressRule
+	for _, r := range allRules {
+		key := fmt.Sprintf("%v|%s", r.Host, r.Provider)
+		if !seen[key] {
+			seen[key] = true
+			unique = append(unique, r)
+		}
+	}
+
+	type rulesFile struct {
+		Rules []config.EgressRule `yaml:"rules"`
+	}
+	return yaml.Marshal(rulesFile{Rules: unique})
 }
 
 // agentService creates an agent container service definition.
