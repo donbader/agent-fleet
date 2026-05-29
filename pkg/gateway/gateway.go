@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"sync"
 
 	"github.com/donbader/agent-fleet/pkg/config"
@@ -177,7 +178,9 @@ func (g *Gateway) handlePlaintext(conn net.Conn) {
 	hostname, port := host, 80
 	if h, p, err := net.SplitHostPort(host); err == nil {
 		hostname = h
-		fmt.Sscanf(p, "%d", &port)
+		if parsed, err := strconv.Atoi(p); err == nil {
+			port = parsed
+		}
 	}
 
 	// Match against rules
@@ -228,18 +231,18 @@ func pipe(a, b net.Conn) {
 
 	go func() {
 		defer wg.Done()
-		io.Copy(b, a)
+		_, _ = io.Copy(b, a)
 		// Signal write-done to the other side
 		if tc, ok := b.(*net.TCPConn); ok {
-			tc.CloseWrite()
+			_ = tc.CloseWrite()
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		io.Copy(a, b)
+		_, _ = io.Copy(a, b)
 		if tc, ok := a.(*net.TCPConn); ok {
-			tc.CloseWrite()
+			_ = tc.CloseWrite()
 		}
 	}()
 

@@ -304,11 +304,3 @@ func TestProxy_MultiplePresets(t *testing.T) {
 		t.Fatalf("rules = %d, want 3", len(rules))
 	}
 }
-
-func isTimeout(err error) bool {
-	if err == nil {
-		return false
-	}
-	netErr, ok := err.(net.Error)
-	return ok && netErr.Timeout()
-}

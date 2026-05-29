@@ -142,7 +142,7 @@ func (g *Gateway) performMITM(clientConn net.Conn, hostname string, rule config.
 	}
 
 	// Pipe the response back
-	io.Copy(clientTLS, upstream)
+	_, _ = io.Copy(clientTLS, upstream)
 }
 
 // performHTTPInjection modifies a plaintext HTTP request and forwards it.
