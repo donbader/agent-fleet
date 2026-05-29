@@ -27,6 +27,8 @@ ENV_VARS="$ENV_VARS
   GATEWAY_HOST: \"$GATEWAY_HOST\""
 ENV_VARS="$ENV_VARS
   GATEWAY_PORT: \"$GATEWAY_PORT\""
+ENV_VARS="$ENV_VARS
+  AUTH_PORT: \"$AUTH_PORT\""
 
 # Add user-defined env vars
 USER_ENVS=$(echo "$CTX" | jq -r '.env // {} | to_entries[] | "  \(.key): \"\(.value)\""')
@@ -42,6 +44,8 @@ build:
   dockerfile: Dockerfile
 cap_add:
   - NET_ADMIN
+sysctls:
+  - net.ipv4.conf.all.route_localnet=1
 ports:
   - "${AUTH_PORT}:${AUTH_PORT}"
 volumes:
