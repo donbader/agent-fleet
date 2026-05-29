@@ -99,9 +99,9 @@ func (u *Updater) CheckUpdate(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("decoding release: %w", err)
 	}
 
-	// Compare versions
+	// Compare versions (normalize "v" prefix)
 	latestVersion := release.TagName
-	if latestVersion == u.cfg.CurrentVersion {
+	if normalizeVersion(latestVersion) == normalizeVersion(u.cfg.CurrentVersion) {
 		return nil, nil // already up to date
 	}
 
@@ -206,6 +206,20 @@ func resolveSymlink(path string) (string, error) {
 	return resolved, nil
 }
 
+// ErrPermissionDenied is returned when the binary cannot be replaced due to permissions.
+type ErrPermissionDenied struct {
+	Path string
+}
+
+func (e *ErrPermissionDenied) Error() string {
+	return fmt.Sprintf("permission denied: cannot write to %s (try: sudo agent-fleet upgrade)", e.Path)
+}
+
+// normalizeVersion strips the "v" prefix for consistent comparison.
+func normalizeVersion(v string) string {
+	return strings.TrimPrefix(v, "v")
+}
+
 // atomicReplace replaces dst with src atomically (rename).
 func atomicReplace(src, dst string) error {
 	// Try rename first (works if same filesystem)
@@ -224,6 +238,9 @@ func atomicReplace(src, dst string) error {
 	tmpDst := dst + ".new"
 	dstFile, err := os.OpenFile(tmpDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
+		if os.IsPermission(err) {
+			return &ErrPermissionDenied{Path: dst}
+		}
 		return err
 	}
 
@@ -235,7 +252,14 @@ func atomicReplace(src, dst string) error {
 	dstFile.Close()
 
 	// Rename temp to final destination
-	return os.Rename(tmpDst, dst)
+	if err := os.Rename(tmpDst, dst); err != nil {
+		if os.IsPermission(err) {
+			os.Remove(tmpDst)
+			return &ErrPermissionDenied{Path: dst}
+		}
+		return err
+	}
+	return nil
 }
 
 // githubRelease is the GitHub API response for a release.

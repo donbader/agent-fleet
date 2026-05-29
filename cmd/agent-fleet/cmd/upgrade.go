@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/donbader/agent-fleet/pkg/selfupdate"
@@ -43,6 +44,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Download and replace
 	fmt.Println("Downloading...")
 	if err := updater.Apply(ctx, release); err != nil {
+		var permErr *selfupdate.ErrPermissionDenied
+		if errors.As(err, &permErr) {
+			return fmt.Errorf("%s", permErr.Error())
+		}
 		return fmt.Errorf("applying update: %w", err)
 	}
 
