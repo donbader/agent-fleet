@@ -10,6 +10,38 @@ Opinionated agent sandbox orchestrator. Deploy AI coding agents with enforced se
 - **Credential injection** — Secrets never enter the sandbox; egress rule providers inject them at the network boundary
 - **Docker API Proxy** — Optionally allow agents to spin up containers via a policy-enforced egress rule
 
+## Installation
+
+**One-liner (public repo):**
+```bash
+curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | sh
+```
+
+**Private repo (uses `gh` CLI auth automatically):**
+```bash
+# If you're logged in with gh CLI, it just works:
+curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | sh
+
+# Or explicitly pass a token:
+curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | GITHUB_TOKEN=$GITHUB_TOKEN sh
+```
+
+**Custom install directory:**
+```bash
+curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | INSTALL_DIR=~/.local/bin sh
+```
+
+**Go install:**
+```bash
+go install github.com/donbader/agent-fleet/cmd/agent-fleet@latest
+```
+
+**Upgrade to latest:**
+```bash
+agent-fleet upgrade
+# Uses gh CLI auth automatically. Falls back to GITHUB_TOKEN if gh not available.
+```
+
 ## Quick Start
 
 ```bash
