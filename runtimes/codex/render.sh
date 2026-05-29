@@ -21,21 +21,15 @@ GATEWAY_HOST=$(echo "$CTX" | jq -r '.gateway_host')
 GATEWAY_PORT=$(echo "$CTX" | jq -r '.gateway_port')
 AUTH_PORT=$(echo "$CTX" | jq -r '.options.auth_port // "1455"')
 
-# Build environment from context
-ENV_VARS="  AGENT_NAME: \"$NAME\""
-ENV_VARS="$ENV_VARS
-  GATEWAY_HOST: \"$GATEWAY_HOST\""
-ENV_VARS="$ENV_VARS
-  GATEWAY_PORT: \"$GATEWAY_PORT\""
-ENV_VARS="$ENV_VARS
-  AUTH_PORT: \"$AUTH_PORT\""
-
-# Add user-defined env vars
-USER_ENVS=$(echo "$CTX" | jq -r '.env // {} | to_entries[] | "  \(.key): \"\(.value)\""')
-if [ -n "$USER_ENVS" ]; then
-    ENV_VARS="$ENV_VARS
-$USER_ENVS"
-fi
+# Build environment map as proper YAML using jq for safe quoting.
+# This handles special characters (:, #, ", etc.) in values.
+ENV_MAP=$(echo "$CTX" | jq -r --arg name "$NAME" --arg gw_host "$GATEWAY_HOST" \
+  --arg gw_port "$GATEWAY_PORT" --arg auth_port "$AUTH_PORT" '
+  {AGENT_NAME: $name, GATEWAY_HOST: $gw_host, GATEWAY_PORT: $gw_port, AUTH_PORT: $auth_port}
+  + (.env // {})
+  | to_entries[]
+  | "  " + .key + ": " + (.value | @json)
+')
 
 # Output compose service fragment
 cat <<EOF
@@ -51,6 +45,6 @@ ports:
 volumes:
   - ${NAME}-codex-auth:/home/agent/.codex
 environment:
-$ENV_VARS
+${ENV_MAP}
 restart: unless-stopped
 EOF

@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"testing"
-
 )
 
 func TestHostMatches(t *testing.T) {

@@ -6,7 +6,7 @@ package bridge
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 )
 
@@ -66,7 +66,7 @@ func (b *Bridge) Run(ctx context.Context) error {
 	}
 	b.agent = agent
 
-	log.Printf("[bridge] agent started (pid %d)", agent.PID())
+	slog.Info("agent started", "pid", agent.PID())
 
 	// Start all channel providers
 	var wg sync.WaitGroup
@@ -92,7 +92,7 @@ func (b *Bridge) Run(ctx context.Context) error {
 		}(i, ch)
 	}
 
-	log.Printf("[bridge] %d channel(s) started", len(b.channels))
+	slog.Info("channels started", "count", len(b.channels))
 
 	// Wait for agent to exit or context cancellation
 	wg.Add(1)
@@ -106,9 +106,9 @@ func (b *Bridge) Run(ctx context.Context) error {
 	// Wait for context cancellation or first error
 	select {
 	case <-ctx.Done():
-		log.Printf("[bridge] shutting down...")
+		slog.Info("shutting down")
 	case err := <-errCh:
-		log.Printf("[bridge] error: %v", err)
+		slog.Error("bridge error", "error", err)
 	}
 
 	// Graceful shutdown
@@ -135,7 +135,7 @@ func (b *Bridge) routeToAgent(ctx context.Context, msg IncomingMessage) {
 	}
 
 	if err := b.agent.Send(acpMsg); err != nil {
-		log.Printf("[bridge] failed to send to agent: %v", err)
+		slog.Error("failed to send to agent", "error", err)
 	}
 }
 
@@ -144,7 +144,7 @@ func (b *Bridge) shutdown() {
 	// Stop channels
 	for _, ch := range b.channels {
 		if err := ch.Stop(context.Background()); err != nil {
-			log.Printf("[bridge] channel stop error: %v", err)
+			slog.Error("channel stop error", "error", err)
 		}
 	}
 

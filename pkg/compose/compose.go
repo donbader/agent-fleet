@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -17,9 +17,9 @@ import (
 
 // ComposeFile represents a docker-compose.yml structure.
 type ComposeFile struct {
-	Services map[string]*Service       `yaml:"services"`
-	Networks map[string]*Network       `yaml:"networks"`
-	Volumes  map[string]*VolumeConfig  `yaml:"volumes,omitempty"`
+	Services map[string]*Service      `yaml:"services"`
+	Networks map[string]*Network      `yaml:"networks"`
+	Volumes  map[string]*VolumeConfig `yaml:"volumes,omitempty"`
 }
 
 // Service represents a Docker Compose service.
@@ -53,18 +53,18 @@ type VolumeConfig struct{}
 
 // RenderContext is the JSON input passed to a provider's render script via stdin.
 type RenderContext struct {
-	Name        string         `json:"name"`
-	FleetName   string         `json:"fleet_name"`
-	Options     map[string]any `json:"options"`
+	Name        string            `json:"name"`
+	FleetName   string            `json:"fleet_name"`
+	Options     map[string]any    `json:"options"`
 	Env         map[string]string `json:"env"`
-	GatewayHost string         `json:"gateway_host"`
-	GatewayPort string         `json:"gateway_port"`
+	GatewayHost string            `json:"gateway_host"`
+	GatewayPort string            `json:"gateway_port"`
 }
 
 // Generator creates Docker Compose files from fleet configuration.
 type Generator struct {
 	fleet    *config.ResolvedFleet
-	repoRoot string // absolute path to repo root (where images/ lives)
+	repoRoot string             // absolute path to repo root (where images/ lives)
 	resolver *provider.Resolver // resolves remote provider paths to local dirs
 }
 
@@ -164,7 +164,7 @@ func (g *Generator) agentService(name string, agent *config.AgentConfig) (*Servi
 	// Try to execute the provider's render script
 	svc, err := g.executeRenderScript(providerDir, name, agent)
 	if err != nil {
-		log.Printf("[compose] render script failed for %s, using defaults: %v", name, err)
+		slog.Warn("render script failed, using defaults", "agent", name, "error", err)
 		svc = nil
 	}
 

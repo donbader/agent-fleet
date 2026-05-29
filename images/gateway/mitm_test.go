@@ -3,7 +3,6 @@ package gateway
 import (
 	"net/http"
 	"testing"
-
 )
 
 func TestApplyInjection_TelegramBot(t *testing.T) {
@@ -67,12 +66,12 @@ func TestApplyInjection_APIKey(t *testing.T) {
 
 func TestInjectTelegramToken(t *testing.T) {
 	tests := []struct {
-		name      string
-		path      string
-		query     string
-		token     string
-		wantPath  string
-		wantURI   string
+		name     string
+		path     string
+		query    string
+		token    string
+		wantPath string
+		wantURI  string
 	}{
 		{
 			name:     "getUpdates",

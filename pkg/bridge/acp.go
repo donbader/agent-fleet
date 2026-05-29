@@ -7,11 +7,11 @@ import (
 
 // ACP (Agent Client Protocol) message types.
 const (
-	MessageTypeUserMessage    = "user_message"
-	MessageTypeAgentResponse  = "agent_response"
-	MessageTypeSessionStart   = "session_start"
-	MessageTypeSessionEnd     = "session_end"
-	MessageTypeError          = "error"
+	MessageTypeUserMessage   = "user_message"
+	MessageTypeAgentResponse = "agent_response"
+	MessageTypeSessionStart  = "session_start"
+	MessageTypeSessionEnd    = "session_end"
+	MessageTypeError         = "error"
 )
 
 // ACPMessage is the wire format for messages between bridge and agent.

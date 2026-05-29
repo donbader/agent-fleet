@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"strings"
-
 )
 
 // matchRule finds the first matching egress rule for the given hostname.

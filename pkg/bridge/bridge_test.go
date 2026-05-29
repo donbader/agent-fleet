@@ -66,13 +66,13 @@ func TestDecodeACPMessage_Invalid(t *testing.T) {
 
 // mockChannel implements ChannelProvider for testing.
 type mockChannel struct {
-	mu          sync.Mutex
-	started     bool
-	stopped     bool
-	commands    map[string]CommandHandler
-	msgHandler  MessageHandler
-	sentMsgs    []sentMsg
-	startErr    error
+	mu         sync.Mutex
+	started    bool
+	stopped    bool
+	commands   map[string]CommandHandler
+	msgHandler MessageHandler
+	sentMsgs   []sentMsg
+	startErr   error
 }
 
 type sentMsg struct {

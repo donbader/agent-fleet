@@ -10,14 +10,14 @@ import (
 
 // mockRunner records calls for testing.
 type mockRunner struct {
-	mu       sync.Mutex
-	upCalls  []runnerCall
+	mu        sync.Mutex
+	upCalls   []runnerCall
 	downCalls []runnerCall
-	psCalls  []runnerCall
-	upErr    error
-	downErr  error
-	psOutput string
-	psErr    error
+	psCalls   []runnerCall
+	upErr     error
+	downErr   error
+	psOutput  string
+	psErr     error
 }
 
 type runnerCall struct {
