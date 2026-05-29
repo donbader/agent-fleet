@@ -25,6 +25,14 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "ports": {
+      "type": "array",
+      "description": "Host ports to expose from the agent container (e.g., for dev servers). Format: \"host:container\" or \"port\" (same for both).",
+      "items": {
+        "type": "string",
+        "pattern": "^(\\d+:\\d+|\\d+)$"
+      }
     }
   },
   "definitions": {

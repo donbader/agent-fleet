@@ -30,6 +30,7 @@ type Service struct {
 	Environment map[string]string `yaml:"environment,omitempty"`
 	Networks    []string          `yaml:"networks,omitempty"`
 	CapAdd      []string          `yaml:"cap_add,omitempty"`
+	Sysctls     []string          `yaml:"sysctls,omitempty"`
 	DependsOn   []string          `yaml:"depends_on,omitempty"`
 	Volumes     []string          `yaml:"volumes,omitempty"`
 	Ports       []string          `yaml:"ports,omitempty"`
@@ -190,7 +191,19 @@ func (g *Generator) agentService(name string, agent *config.AgentConfig) (*Servi
 	}
 
 	// Fleet-level concerns (always applied by CLI, not provider)
+	// Merge user-declared ports from agent.yaml with provider-declared ports.
+	if len(agent.Ports) > 0 {
+		svc.Ports = appendUnique(svc.Ports, agent.Ports)
+	}
+
+	// Agents always need the internal network to reach the gateway.
+	// If the service exposes ports to the host, it also needs the external
+	// network — Docker won't publish ports from internal-only networks.
+	// The iptables rules inside the container are the real security boundary.
 	svc.Networks = []string{g.internalNetworkName()}
+	if len(svc.Ports) > 0 {
+		svc.Networks = append(svc.Networks, g.externalNetworkName())
+	}
 	svc.DependsOn = []string{g.gatewayServiceName()}
 
 	return svc, nil
@@ -283,4 +296,19 @@ func collectNamedVolumes(services map[string]*Service) map[string]*VolumeConfig 
 		return nil
 	}
 	return volumes
+}
+
+// appendUnique appends items from src to dst, skipping duplicates.
+func appendUnique(dst, src []string) []string {
+	seen := make(map[string]bool, len(dst))
+	for _, v := range dst {
+		seen[v] = true
+	}
+	for _, v := range src {
+		if !seen[v] {
+			dst = append(dst, v)
+			seen[v] = true
+		}
+	}
+	return dst
 }

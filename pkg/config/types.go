@@ -30,6 +30,7 @@ type AgentConfig struct {
 	Schema  string            `yaml:"$schema,omitempty"`
 	Egress  []string          `yaml:"egress"`
 	Runtime ProviderRef       `yaml:"runtime"`
+	Ports   []string          `yaml:"ports,omitempty"`
 	Env     map[string]string `yaml:"env,omitempty"`
 }
 

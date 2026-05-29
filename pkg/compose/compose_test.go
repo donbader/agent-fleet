@@ -180,3 +180,105 @@ func TestGenerate_AgentDependsOnGateway(t *testing.T) {
 		t.Errorf("depends_on = %v, want [test-gateway]", agent.DependsOn)
 	}
 }
+
+func TestGenerate_UserPorts(t *testing.T) {
+	fleet := &config.ResolvedFleet{
+		Fleet: config.FleetConfig{
+			Fleet:  config.FleetMeta{Name: "test"},
+			Agents: []string{"dev"},
+			EgressPresets: map[string]config.EgressPreset{
+				"main": {{Host: []string{"*"}}},
+			},
+		},
+		Agents: map[string]*config.AgentConfig{
+			"dev": {
+				Egress:  []string{"main"},
+				Runtime: config.ProviderRef{Provider: "github.com/donbader/agent-fleet/runtimes/codex"},
+				Ports:   []string{"3000:3000", "8080:8080"},
+			},
+		},
+	}
+
+	gen := New(fleet, "/repo", nil)
+	data, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+
+	var compose ComposeFile
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	agent := compose.Services["dev"]
+	if agent == nil {
+		t.Fatal("dev service not found")
+	}
+
+	// Should have user-declared ports
+	if len(agent.Ports) < 2 {
+		t.Fatalf("ports count = %d, want at least 2", len(agent.Ports))
+	}
+	found3000, found8080 := false, false
+	for _, p := range agent.Ports {
+		if p == "3000:3000" {
+			found3000 = true
+		}
+		if p == "8080:8080" {
+			found8080 = true
+		}
+	}
+	if !found3000 || !found8080 {
+		t.Errorf("ports = %v, want 3000:3000 and 8080:8080 present", agent.Ports)
+	}
+
+	// Should be on external network since it has ports
+	hasExternal := false
+	for _, n := range agent.Networks {
+		if n == "external" {
+			hasExternal = true
+		}
+	}
+	if !hasExternal {
+		t.Errorf("networks = %v, want external network when ports are declared", agent.Networks)
+	}
+}
+
+func TestGenerate_NoPortsInternalOnly(t *testing.T) {
+	fleet := &config.ResolvedFleet{
+		Fleet: config.FleetConfig{
+			Fleet:  config.FleetMeta{Name: "test"},
+			Agents: []string{"worker"},
+			EgressPresets: map[string]config.EgressPreset{
+				"main": {{Host: []string{"*"}}},
+			},
+		},
+		Agents: map[string]*config.AgentConfig{
+			"worker": {
+				Egress:  []string{"main"},
+				Runtime: config.ProviderRef{Provider: "github.com/donbader/agent-fleet/runtimes/codex"},
+			},
+		},
+	}
+
+	gen := New(fleet, "/repo", nil)
+	data, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+
+	var compose ComposeFile
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	agent := compose.Services["worker"]
+	if agent == nil {
+		t.Fatal("worker service not found")
+	}
+
+	// No ports — should only be on internal network
+	if len(agent.Networks) != 1 || agent.Networks[0] != "internal" {
+		t.Errorf("networks = %v, want [internal] only when no ports", agent.Networks)
+	}
+}
