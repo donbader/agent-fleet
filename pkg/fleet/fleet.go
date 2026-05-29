@@ -11,6 +11,7 @@ import (
 
 	"github.com/donbader/agent-fleet/pkg/compose"
 	"github.com/donbader/agent-fleet/pkg/config"
+	"github.com/donbader/agent-fleet/pkg/provider"
 )
 
 // Runner executes Docker Compose commands. Interface for testability.
@@ -72,8 +73,12 @@ func (f *Fleet) Up(ctx context.Context) error {
 		return fmt.Errorf("finding repo root: %w", err)
 	}
 
-	// 3. Generate docker-compose.yml
-	gen := compose.New(resolved, repoRoot)
+	// 3. Set up provider resolver (clones remote providers to cache)
+	cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "agent-fleet", "providers")
+	resolver := provider.NewResolver(cacheDir)
+
+	// 4. Generate docker-compose.yml
+	gen := compose.New(resolved, repoRoot, resolver)
 	data, err := gen.Generate()
 	if err != nil {
 		return fmt.Errorf("generating compose: %w", err)
