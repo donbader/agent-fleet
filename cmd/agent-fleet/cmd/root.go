@@ -12,8 +12,8 @@ import (
 var (
 	fleetFile string
 	version   = "dev"
-	commit    = "none"
-	date      = "unknown"
+	commit    = "none"  //nolint:unused // set via ldflags at build time
+	date      = "unknown" //nolint:unused // set via ldflags at build time
 )
 
 var rootCmd = &cobra.Command{
