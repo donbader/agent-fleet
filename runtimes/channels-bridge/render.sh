@@ -30,6 +30,8 @@ build:
   dockerfile: Dockerfile
 cap_add:
   - NET_ADMIN
+volumes:
+  - ${NAME}-home:/home/agent
 environment:
   AGENT_NAME: "${NAME}"
   GATEWAY_HOST: "${GATEWAY_HOST}"
