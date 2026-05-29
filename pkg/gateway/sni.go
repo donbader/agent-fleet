@@ -168,10 +168,6 @@ func peekHTTPHost(conn net.Conn) (string, net.Conn, error) {
 	req.Body.Close()
 
 	host := req.Host
-	// Strip port if present
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
 
 	// Create replayed connection with all the bytes we consumed
 	replayed := &peekedConn{Conn: conn, peeked: buf.Bytes()}
