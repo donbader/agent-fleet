@@ -121,10 +121,7 @@ func TestProxy_DefaultDeny(t *testing.T) {
 
 	// The gateway should close the connection (deny)
 	conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	resp, err := io.ReadAll(conn)
-	if err != nil && !isTimeout(err) {
-		// Connection closed is expected (deny)
-	}
+	resp, _ := io.ReadAll(conn)
 
 	// Should NOT get a valid HTTP response
 	if strings.Contains(string(resp), "HTTP/1.1 200") {
@@ -306,12 +303,4 @@ func TestProxy_MultiplePresets(t *testing.T) {
 	if len(rules) != 3 {
 		t.Fatalf("rules = %d, want 3", len(rules))
 	}
-}
-
-func isTimeout(err error) bool {
-	if err == nil {
-		return false
-	}
-	netErr, ok := err.(net.Error)
-	return ok && netErr.Timeout()
 }

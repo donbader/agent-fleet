@@ -1,0 +1,47 @@
+version: 2
+
+project_name: agent-fleet
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - main: ./cmd/agent-fleet
+    binary: agent-fleet
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/donbader/agent-fleet/cmd/agent-fleet/cmd.version={{.Version}}
+      - -X github.com/donbader/agent-fleet/cmd/agent-fleet/cmd.commit={{.ShortCommit}}
+      - -X github.com/donbader/agent-fleet/cmd/agent-fleet/cmd.date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+
+release:
+  github:
+    owner: donbader
+    name: agent-fleet
+  draft: false
+  prerelease: auto

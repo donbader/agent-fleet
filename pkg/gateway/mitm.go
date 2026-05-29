@@ -142,7 +142,7 @@ func (g *Gateway) performMITM(clientConn net.Conn, hostname string, rule config.
 	}
 
 	// Pipe the response back
-	io.Copy(clientTLS, upstream)
+	_, _ = io.Copy(clientTLS, upstream)
 }
 
 // performHTTPInjection modifies a plaintext HTTP request and forwards it.
@@ -172,7 +172,7 @@ func (g *Gateway) performHTTPInjection(clientConn net.Conn, host string, rule co
 	}
 
 	// Pipe the response back
-	io.Copy(clientConn, upstream)
+	_, _ = io.Copy(clientConn, upstream)
 }
 
 // applyInjection modifies an HTTP request based on the egress rule provider.

@@ -1,0 +1,12 @@
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - (net/http.ResponseWriter).Write
+      - (*net.TCPConn).CloseWrite
+      - (net.Conn).SetReadDeadline
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
