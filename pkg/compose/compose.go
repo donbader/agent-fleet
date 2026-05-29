@@ -244,15 +244,15 @@ func (g *Generator) executeRenderScript(providerDir string, name string, agent *
 }
 
 func (g *Generator) gatewayServiceName() string {
-	return fmt.Sprintf("%s-gateway", g.fleet.Fleet.Fleet.Name)
+	return "gateway"
 }
 
 func (g *Generator) internalNetworkName() string {
-	return fmt.Sprintf("%s-internal", g.fleet.Fleet.Fleet.Name)
+	return "internal"
 }
 
 func (g *Generator) externalNetworkName() string {
-	return fmt.Sprintf("%s-external", g.fleet.Fleet.Fleet.Name)
+	return "external"
 }
 
 // collectNamedVolumes scans all services for named volume references

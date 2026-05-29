@@ -44,7 +44,7 @@ func TestGenerate_SimpleFleet(t *testing.T) {
 	}
 
 	// Gateway service — should use build
-	gw := compose.Services["myfleet-gateway"]
+	gw := compose.Services["gateway"]
 	if gw == nil {
 		t.Fatal("gateway service not found")
 	}
@@ -74,11 +74,11 @@ func TestGenerate_SimpleFleet(t *testing.T) {
 	if len(compose.Networks) != 2 {
 		t.Errorf("networks count = %d, want 2", len(compose.Networks))
 	}
-	internal := compose.Networks["myfleet-internal"]
+	internal := compose.Networks["internal"]
 	if internal == nil || !internal.Internal {
 		t.Error("internal network missing or not internal")
 	}
-	external := compose.Networks["myfleet-external"]
+	external := compose.Networks["external"]
 	if external == nil || external.Internal {
 		t.Error("external network missing or is internal")
 	}
@@ -176,7 +176,7 @@ func TestGenerate_AgentDependsOnGateway(t *testing.T) {
 	if agent == nil {
 		t.Fatal("agent 'a' not found")
 	}
-	if len(agent.DependsOn) != 1 || agent.DependsOn[0] != "test-gateway" {
+	if len(agent.DependsOn) != 1 || agent.DependsOn[0] != "gateway" {
 		t.Errorf("depends_on = %v, want [test-gateway]", agent.DependsOn)
 	}
 }
