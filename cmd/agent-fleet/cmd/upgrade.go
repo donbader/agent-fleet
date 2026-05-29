@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/donbader/agent-fleet/pkg/selfupdate"
 	"github.com/spf13/cobra"
@@ -46,11 +50,35 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	if err := updater.Apply(ctx, release); err != nil {
 		var permErr *selfupdate.ErrPermissionDenied
 		if errors.As(err, &permErr) {
-			return fmt.Errorf("%s", permErr.Error())
+			return rerunWithSudo()
 		}
 		return fmt.Errorf("applying update: %w", err)
 	}
 
 	fmt.Printf("✓ Upgraded to %s\n", release.Version)
 	return nil
+}
+
+// rerunWithSudo prompts the user and re-executes the upgrade with sudo.
+func rerunWithSudo() error {
+	fmt.Print("Permission denied. Re-run with sudo? [y/N] ")
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	if answer != "y" && answer != "yes" {
+		return fmt.Errorf("upgrade cancelled (need write access to binary location)")
+	}
+
+	// Re-exec with sudo
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("finding executable: %w", err)
+	}
+
+	cmd := exec.Command("sudo", exePath, "upgrade")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
