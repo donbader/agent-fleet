@@ -1,17 +1,17 @@
-# Example: Multi-Agent Fleet with OAuth MCP + Docker
+# Example: Multi-Agent Fleet
 #
-# Advanced configuration:
-# - Two agents (coder + reviewer), each with own Telegram bot
-# - Shared presets (main) + per-agent presets (telegram bots)
-# - OAuth integration (Notion) via /oauth command
-# - Docker API Proxy for coder agent
-# - Strict egress for reviewer (no catch-all)
+# Two agents with different runtimes:
+# - coder: channels-bridge (Telegram ↔ Codex via ACP)
+# - reviewer: pure codex (no Telegram, manual login via docker exec)
+#
+# Each agent has its own Telegram bot (coder only in this example).
+# Proxy injects bot token — agent never sees real credentials.
 #
 # Usage:
 #   1. Copy this directory
-#   2. Create .env with your secrets
+#   2. Create .env with your secrets (see .env.example)
 #   3. Run: agent-fleet up
-#   4. In Telegram, send "/oauth notion" to authorize Notion
+#   4. Message your Telegram bot to talk to the coder agent
 
 fleet:
   name: dev-team
@@ -21,48 +21,28 @@ agents:
   - reviewer
 
 egress-presets:
-  # Per-agent Telegram bot presets
+  # Telegram bot for coder (token injected by proxy)
   telegram-bot-coder:
     - host: ["api.telegram.org"]
       provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
       options:
         token: "${TELEGRAM_BOT_TOKEN_CODER}"
 
-  telegram-bot-reviewer:
-    - host: ["api.telegram.org"]
-      provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
-      options:
-        token: "${TELEGRAM_BOT_TOKEN_REVIEWER}"
-
-  # Notion MCP OAuth
-  notion-mcp:
-    - endpoint: [https://mcp.notion.com/mcp]
-      provider: "github.com/donbader/agent-fleet/egress-rules/mcp-oauth"
-
-  # Docker access
-  docker:
-    - provider: "github.com/donbader/agent-fleet/egress-rules/docker-api-proxy"
-      options:
-        max_containers: 5
-        disk_quota: "10Gi"
-        resources:
-          limits:
-            memory: "2Gi"
-            cpu: "2"
-
-  # Permissive: GitHub + allow all
-  main:
+  # GitHub with PAT injection
+  github:
     - host: ["api.github.com", "github.com"]
       provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
       options:
         token: "${GITHUB_PAT_TOKEN}"
+
+  # Allow all other traffic (passthrough, no MITM)
+  allow-all:
     - host: ["*"]
 
-  # Strict: GitHub only, no catch-all
-  github-strict:
+  # Strict: GitHub + Telegram only, no catch-all
+  strict:
     - host: ["api.github.com", "github.com"]
       provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
       options:
         token: "${GITHUB_PAT_TOKEN}"
-    - host: ["api.telegram.org"]
-    # No catch-all → only GitHub + Telegram reachable
+    - host: ["api.openai.com"]

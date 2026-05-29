@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -92,7 +93,7 @@ func runCtx(cmd *cobra.Command, args []string) error {
 }
 
 // navigatePath traverses a nested map using dot-path notation.
-// Path must start with "." (e.g., ".name", ".options.auth_port").
+// Supports array indexing with numeric segments (e.g., ".options.channels.0.options").
 func navigatePath(data map[string]any, path string) (any, bool) {
 	// Strip leading dot
 	path = strings.TrimPrefix(path, ".")
@@ -104,12 +105,20 @@ func navigatePath(data map[string]any, path string) (any, bool) {
 	var current any = data
 
 	for _, part := range parts {
-		m, ok := current.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		current, ok = m[part]
-		if !ok {
+		switch v := current.(type) {
+		case map[string]any:
+			val, ok := v[part]
+			if !ok {
+				return nil, false
+			}
+			current = val
+		case []any:
+			idx, err := strconv.Atoi(part)
+			if err != nil || idx < 0 || idx >= len(v) {
+				return nil, false
+			}
+			current = v[idx]
+		default:
 			return nil, false
 		}
 	}

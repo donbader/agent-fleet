@@ -16,5 +16,5 @@ if command -v iptables >/dev/null 2>&1; then
     fi
 fi
 
-# Launch bridge (runs as root since it manages the agent process)
-exec /usr/local/bin/bridge
+# Launch bridge
+exec tsx /bridge/src/index.ts

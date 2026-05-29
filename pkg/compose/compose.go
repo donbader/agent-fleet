@@ -40,8 +40,9 @@ type Service struct {
 
 // BuildConfig represents the build section of a service.
 type BuildConfig struct {
-	Context    string `yaml:"context"`
-	Dockerfile string `yaml:"dockerfile,omitempty"`
+	Context            string            `yaml:"context"`
+	Dockerfile         string            `yaml:"dockerfile,omitempty"`
+	AdditionalContexts map[string]string `yaml:"additional_contexts,omitempty"`
 }
 
 // Network represents a Docker Compose network.

@@ -13,6 +13,9 @@ func TestNavigatePath(t *testing.T) {
 			"nested": map[string]any{
 				"deep": "value",
 			},
+			"channels": []any{
+				map[string]any{"provider": "telegram", "opts": "val"},
+			},
 		},
 		"env": map[string]any{
 			"OPENAI_API_KEY": "sk-test",
@@ -35,6 +38,9 @@ func TestNavigatePath(t *testing.T) {
 		{"not found", ".missing", nil, false},
 		{"nested not found", ".options.missing", nil, false},
 		{"path through non-map", ".name.invalid", nil, false},
+		{"array index", ".options.channels.0", map[string]any{"provider": "telegram", "opts": "val"}, true},
+		{"array index nested", ".options.channels.0.provider", "telegram", true},
+		{"array out of bounds", ".options.channels.5", nil, false},
 		{"empty path returns whole map", ".", data, true},
 	}
 

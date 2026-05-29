@@ -1,8 +1,8 @@
 # Agent: coder
-# Full-featured dev agent with Docker + OAuth + permissive egress
-# Custom image with extra tools
+# Full-featured dev agent with Telegram channel via channels-bridge.
+# Messages from Telegram are routed to Codex via ACP protocol.
 
-egress: [telegram-bot-coder, notion-mcp, docker, main]
+egress: [telegram-bot-coder, github, allow-all]
 
 runtime:
   provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge"
