@@ -1,37 +1,21 @@
 #!/bin/bash
 # Render script for the Codex runtime provider.
-# Input: JSON context via stdin
+# Input: render context available via RENDER_CONTEXT env var
 # Output: Docker Compose service fragment (YAML) to stdout
 #
-# Context fields:
-#   name         - agent name
-#   fleet_name   - fleet name
-#   options      - runtime options from agent.yaml
-#   env          - user-defined environment variables
-#   gateway_host - gateway service name
-#   gateway_port - gateway port
+# Uses `agent-fleet ctx` to extract values from the render context.
+# No external dependencies (jq, python, etc.) required.
+#
+# Note: user-defined env vars (from agent.yaml "env:" section) are
+# automatically merged by the CLI after this script runs.
 
 set -e
 
-# Read context from stdin
-CTX=$(cat)
+NAME=$(agent-fleet ctx .name)
+GATEWAY_HOST=$(agent-fleet ctx .gateway_host)
+GATEWAY_PORT=$(agent-fleet ctx .gateway_port)
+AUTH_PORT=$(agent-fleet ctx .options.auth_port --default 1455)
 
-NAME=$(echo "$CTX" | jq -r '.name')
-GATEWAY_HOST=$(echo "$CTX" | jq -r '.gateway_host')
-GATEWAY_PORT=$(echo "$CTX" | jq -r '.gateway_port')
-AUTH_PORT=$(echo "$CTX" | jq -r '.options.auth_port // "1455"')
-
-# Build environment map as proper YAML using jq for safe quoting.
-# This handles special characters (:, #, ", etc.) in values.
-ENV_MAP=$(echo "$CTX" | jq -r --arg name "$NAME" --arg gw_host "$GATEWAY_HOST" \
-  --arg gw_port "$GATEWAY_PORT" --arg auth_port "$AUTH_PORT" '
-  {AGENT_NAME: $name, GATEWAY_HOST: $gw_host, GATEWAY_PORT: $gw_port, AUTH_PORT: $auth_port}
-  + (.env // {})
-  | to_entries[]
-  | "  " + .key + ": " + (.value | @json)
-')
-
-# Output compose service fragment
 cat <<EOF
 build:
   context: .
@@ -45,6 +29,9 @@ ports:
 volumes:
   - ${NAME}-codex-auth:/home/agent/.codex
 environment:
-${ENV_MAP}
+  AGENT_NAME: "${NAME}"
+  GATEWAY_HOST: "${GATEWAY_HOST}"
+  GATEWAY_PORT: "${GATEWAY_PORT}"
+  AUTH_PORT: "${AUTH_PORT}"
 restart: unless-stopped
 EOF

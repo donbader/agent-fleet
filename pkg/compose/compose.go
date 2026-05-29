@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -183,8 +184,13 @@ func (g *Generator) agentService(name string, agent *config.AgentConfig) (*Servi
 			CapAdd:  []string{"NET_ADMIN"},
 			Restart: "unless-stopped",
 		}
+	}
 
-		// Add user-defined env vars
+	// Merge user-defined env vars (applies to both render script and fallback)
+	if len(agent.Env) > 0 {
+		if svc.Environment == nil {
+			svc.Environment = make(map[string]string)
+		}
 		for k, v := range agent.Env {
 			svc.Environment[k] = v
 		}
@@ -234,10 +240,11 @@ func (g *Generator) executeRenderScript(providerDir string, name string, agent *
 		return nil, fmt.Errorf("marshaling render context: %w", err)
 	}
 
-	// Execute render script
+	// Execute render script with context available via env var and stdin
 	cmd = exec.Command("bash", renderScript)
 	cmd.Dir = providerDir
 	cmd.Stdin = bytes.NewReader(contextJSON)
+	cmd.Env = append(os.Environ(), "RENDER_CONTEXT="+string(contextJSON))
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
