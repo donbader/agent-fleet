@@ -302,6 +302,7 @@ func (p *Provider) handleCommand(ctx context.Context, chatID string, text string
 }
 
 // isAllowed checks if a user is in the allowed list.
+// Supports both numeric IDs (e.g., "123456789") and usernames (e.g., "@myuser" or "myuser").
 func (p *Provider) isAllowed(user *User) bool {
 	if user == nil {
 		return false
@@ -310,9 +311,18 @@ func (p *Provider) isAllowed(user *User) bool {
 		return true // no filter = allow all
 	}
 
-	username := "@" + user.Username
+	userIDStr := strconv.FormatInt(user.ID, 10)
 	for _, allowed := range p.cfg.AllowedUsers {
-		if strings.EqualFold(allowed, username) {
+		allowed = strings.TrimSpace(allowed)
+
+		// Numeric ID match
+		if allowed == userIDStr {
+			return true
+		}
+
+		// Username match (with or without @ prefix)
+		allowedName := strings.TrimPrefix(allowed, "@")
+		if allowedName != "" && strings.EqualFold(allowedName, user.Username) {
 			return true
 		}
 	}

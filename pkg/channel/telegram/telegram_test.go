@@ -49,6 +49,11 @@ func TestProvider_IsAllowed(t *testing.T) {
 		{"not allowed", []string{"@admin"}, &User{Username: "hacker"}, false},
 		{"empty list allows all", []string{}, &User{Username: "anyone"}, true},
 		{"multiple allowed", []string{"@a", "@b"}, &User{Username: "b"}, true},
+		{"numeric ID match", []string{"123456"}, &User{ID: 123456, Username: "someone"}, true},
+		{"numeric ID no match", []string{"999"}, &User{ID: 123456, Username: "someone"}, false},
+		{"username without @", []string{"admin"}, &User{Username: "admin"}, true},
+		{"mixed list ID match", []string{"@bob", "123456"}, &User{ID: 123456, Username: "alice"}, true},
+		{"mixed list username match", []string{"@bob", "123456"}, &User{ID: 999, Username: "bob"}, true},
 	}
 
 	for _, tt := range tests {
