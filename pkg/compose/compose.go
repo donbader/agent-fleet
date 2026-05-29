@@ -201,6 +201,11 @@ func (g *Generator) agentService(name string, agent *config.AgentConfig) (*Servi
 	// Home directory: named volume (Docker populates from image on first run)
 	svc.Volumes = append(svc.Volumes, fmt.Sprintf("%s-home:/home/agent", name))
 
+	// Merge user-declared volumes from agent.yaml
+	if len(agent.Volumes) > 0 {
+		svc.Volumes = appendUnique(svc.Volumes, agent.Volumes)
+	}
+
 	// Merge user-declared ports from agent.yaml with provider-declared ports.
 	if len(agent.Ports) > 0 {
 		svc.Ports = appendUnique(svc.Ports, agent.Ports)
