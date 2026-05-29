@@ -96,19 +96,20 @@ func (b *Bridge) handleUserMessage(chatID string, text string) {
 	if !exists {
 		sessionID = chatID // Use chatID as sessionID for simplicity
 		b.sessions[chatID] = sessionID
+	}
+	b.mu.Unlock()
 
-		// Send session.start
+	// Send session.start for new sessions
+	if !exists {
 		start := ACPMessage{
 			Type:      "session.start",
 			SessionID: sessionID,
 		}
 		if err := b.sendToAgent(start); err != nil {
 			slog.Error("failed to start session", "error", err)
-			b.mu.Unlock()
 			return
 		}
 	}
-	b.mu.Unlock()
 
 	// Send message to agent
 	msg := ACPMessage{
