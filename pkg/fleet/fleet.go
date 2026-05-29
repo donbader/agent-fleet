@@ -79,7 +79,13 @@ func (f *Fleet) Up(ctx context.Context) error {
 		return fmt.Errorf("generating compose: %w", err)
 	}
 
-	// 4. Write to output directory
+	// 4. Generate gateway rules config
+	rulesData, err := gen.GatewayRulesYAML()
+	if err != nil {
+		return fmt.Errorf("generating gateway rules: %w", err)
+	}
+
+	// 5. Write to output directory
 	if err := os.MkdirAll(f.outputDir, 0755); err != nil {
 		return fmt.Errorf("creating output dir: %w", err)
 	}
@@ -89,7 +95,12 @@ func (f *Fleet) Up(ctx context.Context) error {
 		return fmt.Errorf("writing compose file: %w", err)
 	}
 
-	// 5. Start containers
+	rulesFile := filepath.Join(f.outputDir, "gateway-rules.yaml")
+	if err := os.WriteFile(rulesFile, rulesData, 0644); err != nil {
+		return fmt.Errorf("writing gateway rules: %w", err)
+	}
+
+	// 6. Start containers
 	projectName := resolved.Fleet.Fleet.Name
 	if err := f.runner.Up(ctx, composeFile, projectName); err != nil {
 		return fmt.Errorf("starting fleet: %w", err)
