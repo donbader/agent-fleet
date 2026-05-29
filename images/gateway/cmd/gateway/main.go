@@ -1,5 +1,4 @@
 // Command gateway runs the transparent egress proxy as a standalone process.
-// It is the entrypoint for the gateway Docker container.
 package main
 
 import (
@@ -9,14 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/donbader/agent-fleet/pkg/config"
-	"github.com/donbader/agent-fleet/pkg/gateway"
+	gw "github.com/donbader/agent-fleet/gateway"
 	"gopkg.in/yaml.v3"
 )
 
-// gatewayConfig is the config file format for the gateway container.
-type gatewayConfig struct {
-	Rules []config.EgressRule `yaml:"rules"`
+// rulesConfig is the config file format for the gateway container.
+type rulesConfig struct {
+	Rules []gw.EgressRule `yaml:"rules"`
 }
 
 func main() {
@@ -27,13 +25,13 @@ func main() {
 	rules := loadRules(configPath)
 
 	// Build gateway config using a single "default" preset containing all rules
-	cfg := gateway.Config{
+	cfg := gw.Config{
 		ListenAddr:    listenAddr,
-		Presets:       map[string]config.EgressPreset{"default": rules},
+		Presets:       map[string]gw.EgressPreset{"default": rules},
 		ActivePresets: []string{"default"},
 	}
 
-	gw, err := gateway.New(cfg)
+	proxy, err := gw.New(cfg)
 	if err != nil {
 		log.Fatalf("[gateway] init: %v", err)
 	}
@@ -51,31 +49,30 @@ func main() {
 	}()
 
 	log.Printf("[gateway] starting (listen=%s, rules=%d)", listenAddr, len(rules))
-	if err := gw.Run(ctx); err != nil {
+	if err := proxy.Run(ctx); err != nil {
 		log.Fatalf("[gateway] fatal: %v", err)
 	}
 }
 
 // loadRules reads egress rules from a YAML config file.
-// If the file doesn't exist, returns a default allow-all rule.
-func loadRules(path string) []config.EgressRule {
+func loadRules(path string) gw.EgressPreset {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			log.Printf("[gateway] no config at %s, defaulting to allow-all", path)
-			return []config.EgressRule{{Host: []string{"*"}}}
+			return gw.EgressPreset{{Host: []string{"*"}}}
 		}
 		log.Fatalf("[gateway] read config: %v", err)
 	}
 
-	var cfg gatewayConfig
+	var cfg rulesConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		log.Fatalf("[gateway] parse config: %v", err)
 	}
 
 	if len(cfg.Rules) == 0 {
 		log.Printf("[gateway] config has no rules, defaulting to allow-all")
-		return []config.EgressRule{{Host: []string{"*"}}}
+		return gw.EgressPreset{{Host: []string{"*"}}}
 	}
 
 	return cfg.Rules

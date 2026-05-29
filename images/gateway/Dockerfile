@@ -1,5 +1,5 @@
 # Gateway proxy image
-# Builds the transparent egress proxy from source
+# Self-contained build — clone this folder and run: docker build .
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /src
@@ -14,7 +14,6 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /gateway /usr/local/bin/gateway
 
-# Gateway listens on port 8080
 EXPOSE 8080
 
 ENTRYPOINT ["gateway"]

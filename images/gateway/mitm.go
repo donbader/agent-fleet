@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/donbader/agent-fleet/pkg/config"
 )
 
 // MITMConfig holds the CA certificate and key for MITM interception.
@@ -90,7 +89,7 @@ func (m *MITMConfig) generateCert(hostname string) (*tls.Certificate, error) {
 }
 
 // performMITM intercepts a TLS connection, reads/modifies HTTP, and forwards to upstream.
-func (g *Gateway) performMITM(clientConn net.Conn, hostname string, rule config.EgressRule) {
+func (g *Gateway) performMITM(clientConn net.Conn, hostname string, rule EgressRule) {
 	if g.mitm_cfg == nil {
 		log.Printf("[gateway] MITM not configured, falling back to passthrough for %s", hostname)
 		g.passthrough(clientConn, hostname, 443)
@@ -146,7 +145,7 @@ func (g *Gateway) performMITM(clientConn net.Conn, hostname string, rule config.
 }
 
 // performHTTPInjection modifies a plaintext HTTP request and forwards it.
-func (g *Gateway) performHTTPInjection(clientConn net.Conn, host string, rule config.EgressRule) {
+func (g *Gateway) performHTTPInjection(clientConn net.Conn, host string, rule EgressRule) {
 	// Read the HTTP request
 	req, err := http.ReadRequest(bufio.NewReader(clientConn))
 	if err != nil {
@@ -176,7 +175,7 @@ func (g *Gateway) performHTTPInjection(clientConn net.Conn, host string, rule co
 }
 
 // applyInjection modifies an HTTP request based on the egress rule provider.
-func applyInjection(req *http.Request, hostname string, rule config.EgressRule) {
+func applyInjection(req *http.Request, hostname string, rule EgressRule) {
 	provider := rule.Provider
 	options := rule.Options
 

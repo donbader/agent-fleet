@@ -3,7 +3,6 @@ package gateway
 import (
 	"testing"
 
-	"github.com/donbader/agent-fleet/pkg/config"
 )
 
 func TestHostMatches(t *testing.T) {
@@ -42,7 +41,7 @@ func TestHostMatches(t *testing.T) {
 }
 
 func TestMatchRule(t *testing.T) {
-	rules := []config.EgressRule{
+	rules := []EgressRule{
 		{Host: []string{"api.telegram.org"}, Provider: "telegram-bot"},
 		{Host: []string{"api.github.com", "github.com"}, Provider: "github-pat"},
 		{Host: []string{"*.npmjs.org"}},
@@ -76,7 +75,7 @@ func TestMatchRule(t *testing.T) {
 
 func TestMatchRule_DefaultDeny(t *testing.T) {
 	// No catch-all rule — should deny unknown hosts
-	rules := []config.EgressRule{
+	rules := []EgressRule{
 		{Host: []string{"api.github.com"}, Provider: "github-pat"},
 	}
 
@@ -87,7 +86,7 @@ func TestMatchRule_DefaultDeny(t *testing.T) {
 }
 
 func TestMatchRule_FirstMatchWins(t *testing.T) {
-	rules := []config.EgressRule{
+	rules := []EgressRule{
 		{Host: []string{"api.github.com"}, Provider: "specific-provider"},
 		{Host: []string{"*.github.com"}, Provider: "wildcard-provider"},
 		{Host: []string{"*"}, Provider: "catch-all-provider"},
@@ -103,7 +102,7 @@ func TestMatchRule_FirstMatchWins(t *testing.T) {
 }
 
 func TestNew_CompilesRulesInOrder(t *testing.T) {
-	presets := map[string]config.EgressPreset{
+	presets := map[string]EgressPreset{
 		"telegram": {
 			{Host: []string{"api.telegram.org"}, Provider: "telegram-bot"},
 		},
@@ -139,7 +138,7 @@ func TestNew_CompilesRulesInOrder(t *testing.T) {
 }
 
 func TestNew_UndefinedPreset(t *testing.T) {
-	presets := map[string]config.EgressPreset{
+	presets := map[string]EgressPreset{
 		"main": {{Host: []string{"*"}}},
 	}
 

@@ -12,13 +12,12 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/donbader/agent-fleet/pkg/config"
 )
 
 // Gateway is the transparent egress proxy.
 type Gateway struct {
 	listenAddr string
-	rules      []config.EgressRule
+	rules      []EgressRule
 	listener   net.Listener
 	mitm_cfg   *MITMConfig
 	mu         sync.Mutex
@@ -30,7 +29,7 @@ type Config struct {
 	ListenAddr string
 
 	// Presets are the named egress presets from fleet.yaml.
-	Presets map[string]config.EgressPreset
+	Presets map[string]EgressPreset
 
 	// ActivePresets is the ordered list of preset names for this agent.
 	ActivePresets []string
@@ -42,7 +41,7 @@ type Config struct {
 // New creates a new Gateway instance.
 func New(cfg Config) (*Gateway, error) {
 	// Compile ordered rules from active presets
-	var rules []config.EgressRule
+	var rules []EgressRule
 	for _, name := range cfg.ActivePresets {
 		preset, ok := cfg.Presets[name]
 		if !ok {
@@ -100,7 +99,7 @@ func (g *Gateway) Addr() net.Addr {
 }
 
 // CompiledRules returns the ordered list of egress rules for inspection/testing.
-func (g *Gateway) CompiledRules() []config.EgressRule {
+func (g *Gateway) CompiledRules() []EgressRule {
 	return g.rules
 }
 
@@ -215,12 +214,12 @@ func (g *Gateway) passthrough(clientConn net.Conn, host string, port int) {
 }
 
 // mitm performs MITM TLS interception for credential injection.
-func (g *Gateway) mitm(clientConn net.Conn, hostname string, rule config.EgressRule) {
+func (g *Gateway) mitm(clientConn net.Conn, hostname string, rule EgressRule) {
 	g.performMITM(clientConn, hostname, rule)
 }
 
 // injectHTTP modifies plaintext HTTP requests to inject credentials.
-func (g *Gateway) injectHTTP(clientConn net.Conn, host string, rule config.EgressRule) {
+func (g *Gateway) injectHTTP(clientConn net.Conn, host string, rule EgressRule) {
 	g.performHTTPInjection(clientConn, host, rule)
 }
 
