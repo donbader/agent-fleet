@@ -35,13 +35,14 @@ type Config struct {
 
 // Provider implements bridge.ChannelProvider for Telegram.
 type Provider struct {
-	cfg        Config
-	client     *http.Client
-	baseURL    string
-	commands   map[string]bridge.CommandHandler
-	msgHandler bridge.MessageHandler
-	mu         sync.RWMutex
-	offset     int
+	cfg            Config
+	client         *http.Client
+	baseURL        string
+	commands       map[string]bridge.CommandHandler
+	msgHandler     bridge.MessageHandler
+	pendingPrompts map[string]chan string
+	mu             sync.RWMutex
+	offset         int
 }
 
 // New creates a new Telegram channel provider.
@@ -57,12 +58,13 @@ func New(cfg Config) *Provider {
 	}
 
 	return &Provider{
-		cfg:     cfg,
-		baseURL: baseURL,
+		cfg:            cfg,
+		baseURL:        baseURL,
 		client: &http.Client{
 			Timeout: time.Duration(pollTimeout+5) * time.Second,
 		},
-		commands: make(map[string]bridge.CommandHandler),
+		commands:       make(map[string]bridge.CommandHandler),
+		pendingPrompts: make(map[string]chan string),
 	}
 }
 
@@ -153,16 +155,32 @@ func (p *Provider) Send(ctx context.Context, chatID string, msg bridge.OutgoingM
 	return nil
 }
 
-// PromptUser sends a prompt and waits for a reply.
-// For now, this is a simple implementation that sends the prompt text.
+// PromptUser sends a prompt and waits for the user's reply.
 func (p *Provider) PromptUser(ctx context.Context, chatID string, prompt bridge.Prompt) (string, error) {
 	// Send the prompt
 	if err := p.Send(ctx, chatID, bridge.OutgoingMessage{Text: prompt.Text}); err != nil {
 		return "", err
 	}
 
-	// TODO: implement reply waiting (needs state machine for pending prompts)
-	return "", fmt.Errorf("PromptUser reply waiting not implemented yet")
+	// Create a channel to wait for the reply
+	replyCh := make(chan string, 1)
+	p.mu.Lock()
+	p.pendingPrompts[chatID] = replyCh
+	p.mu.Unlock()
+
+	defer func() {
+		p.mu.Lock()
+		delete(p.pendingPrompts, chatID)
+		p.mu.Unlock()
+	}()
+
+	// Wait for reply or context cancellation
+	select {
+	case reply := <-replyCh:
+		return reply, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // getUpdates calls the Telegram getUpdates API.
@@ -215,6 +233,20 @@ func (p *Provider) handleUpdate(ctx context.Context, update Update) {
 	}
 
 	chatID := strconv.FormatInt(msg.Chat.ID, 10)
+
+	// Check if there's a pending prompt for this chat
+	p.mu.RLock()
+	replyCh, hasPending := p.pendingPrompts[chatID]
+	p.mu.RUnlock()
+
+	if hasPending {
+		// Send reply to the waiting PromptUser call
+		select {
+		case replyCh <- msg.Text:
+		default:
+		}
+		return
+	}
 
 	// Check if this is a command
 	if strings.HasPrefix(msg.Text, "/") {

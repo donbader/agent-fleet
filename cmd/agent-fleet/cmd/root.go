@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/donbader/agent-fleet/pkg/config"
+	"github.com/donbader/agent-fleet/pkg/fleet"
 	"github.com/spf13/cobra"
 )
 
@@ -74,20 +76,32 @@ var validateCmd = &cobra.Command{
 
 func runUp(cmd *cobra.Command, args []string) error {
 	fmt.Println("Loading fleet configuration...")
-	// TODO: implement fleet startup
-	return fmt.Errorf("not implemented yet")
+	f := fleet.New(fleet.Options{FleetFile: fleetFile})
+	if err := f.Up(context.Background()); err != nil {
+		return err
+	}
+	fmt.Println("✓ Fleet started successfully")
+	return nil
 }
 
 func runDown(cmd *cobra.Command, args []string) error {
 	fmt.Println("Stopping fleet...")
-	// TODO: implement fleet shutdown
-	return fmt.Errorf("not implemented yet")
+	f := fleet.New(fleet.Options{FleetFile: fleetFile})
+	if err := f.Down(context.Background()); err != nil {
+		return err
+	}
+	fmt.Println("✓ Fleet stopped")
+	return nil
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	fmt.Println("Fleet status:")
-	// TODO: implement status display
-	return fmt.Errorf("not implemented yet")
+	f := fleet.New(fleet.Options{FleetFile: fleetFile})
+	status, err := f.Status(context.Background())
+	if err != nil {
+		return err
+	}
+	fmt.Println(status)
+	return nil
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {

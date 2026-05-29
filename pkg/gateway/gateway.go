@@ -19,6 +19,7 @@ type Gateway struct {
 	listenAddr string
 	rules      []config.EgressRule
 	listener   net.Listener
+	mitm_cfg   *MITMConfig
 	mu         sync.Mutex
 }
 
@@ -32,6 +33,9 @@ type Config struct {
 
 	// ActivePresets is the ordered list of preset names for this agent.
 	ActivePresets []string
+
+	// MITM is the MITM configuration (CA cert/key). If nil, MITM falls back to passthrough.
+	MITM *MITMConfig
 }
 
 // New creates a new Gateway instance.
@@ -49,6 +53,7 @@ func New(cfg Config) (*Gateway, error) {
 	return &Gateway{
 		listenAddr: cfg.ListenAddr,
 		rules:      rules,
+		mitm_cfg:   cfg.MITM,
 	}, nil
 }
 
@@ -201,18 +206,12 @@ func (g *Gateway) passthrough(clientConn net.Conn, host string, port int) {
 
 // mitm performs MITM TLS interception for credential injection.
 func (g *Gateway) mitm(clientConn net.Conn, hostname string, rule config.EgressRule) {
-	// TODO: Phase 3b+ — full MITM implementation
-	// For now, fall back to passthrough (credentials not injected yet)
-	log.Printf("[gateway] MITM not yet implemented for %s, falling back to passthrough", hostname)
-	g.passthrough(clientConn, hostname, 443)
+	g.performMITM(clientConn, hostname, rule)
 }
 
 // injectHTTP modifies plaintext HTTP requests to inject credentials.
 func (g *Gateway) injectHTTP(clientConn net.Conn, host string, rule config.EgressRule) {
-	// TODO: Phase 3b+ — HTTP header injection
-	// For now, fall back to passthrough
-	log.Printf("[gateway] HTTP injection not yet implemented for %s, falling back to passthrough", host)
-	g.passthrough(clientConn, host, 80)
+	g.performHTTPInjection(clientConn, host, rule)
 }
 
 // pipe copies data bidirectionally between two connections.
