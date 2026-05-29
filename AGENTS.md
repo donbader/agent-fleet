@@ -136,6 +136,23 @@ golangci-lint run
 - Docker Compose — orchestration
 - [grammy](https://grammy.dev/) — Telegram bot framework (channel provider, Node.js)
 
+## Release Strategy
+
+**Design principle: development is decoupled from releases.** Runtimes, providers, and egress-rules are deployed via Docker build (not CLI binary). Adding new options, changing render scripts, or updating Dockerfiles never requires a CLI release. The CLI is a thin orchestrator — intelligence lives in the providers.
+
+Tag a new version (`vX.Y.Z`) only when the CLI binary behavior changes:
+- New or changed commands
+- Compose generator logic changes (affects `agent-fleet up` output)
+- Bug fixes in CLI code (`cmd/`, `pkg/compose/`, `pkg/fleet/`, `pkg/selfupdate/`)
+
+Do NOT tag for:
+- Runtime/provider changes (`runtimes/`, `egress-rules/`, Dockerfile, render.sh, bridge code)
+- Documentation or examples
+- CI/workflow changes
+- Schema updates (consumed at runtime, not baked into binary)
+
+When in doubt: if a user needs `agent-fleet upgrade` to get the fix, tag. If `agent-fleet up` (which rebuilds images) is enough, don't tag.
+
 ## What NOT to Do
 
 - Don't use OpenShell — we manage our own proxy and isolation
