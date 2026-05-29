@@ -84,8 +84,8 @@ runtime:
 # Telegram Bot Token (for channel messaging)
 # TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
 
-# Telegram allowed user IDs (comma-separated)
-# TELEGRAM_ALLOWED_USERS=123456789
+# Telegram allowed users (comma-separated IDs or usernames, e.g. 123456789,@myuser)
+# TELEGRAM_ALLOWED_USERS=123456789,@myuser
 `
 		if err := os.WriteFile(".env.example", []byte(envExample), 0644); err != nil {
 			return fmt.Errorf("writing .env.example: %w", err)
