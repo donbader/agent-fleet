@@ -119,30 +119,22 @@ Users talk to different bots to reach different agents.
 
 Channel providers must implement:
 
-```go
-type ChannelProvider interface {
+```typescript
+export interface ChannelProvider {
     // Start the channel (connect to platform, begin listening)
-    Start(ctx context.Context, config ChannelConfig) error
+    start(send: SendFunc): Promise<void>;
 
     // Stop the channel gracefully
-    Stop(ctx context.Context) error
+    stop(): Promise<void>;
 
-    // RegisterCommand — bridge registers commands at startup
-    RegisterCommand(name string, handler CommandHandler)
+    // Send a streaming response chunk to a chat
+    sendResponse(chatId: string, text: string): Promise<void>;
 
-    // OnMessage — non-command messages forwarded to agent
-    OnMessage(handler MessageHandler)
-
-    // Send a message to a chat
-    Send(ctx context.Context, chatID string, msg OutgoingMessage) error
-
-    // PromptUser — interactive prompt (blocks until user replies)
-    // Used by OAuth flows, confirmations, etc.
-    PromptUser(ctx context.Context, chatID string, prompt Prompt) (string, error)
+    // Mark a response as complete
+    completeResponse(chatId: string): Promise<void>;
 }
 
-type CommandHandler func(ctx context.Context, chatID string, args string) error
-type MessageHandler func(ctx context.Context, msg IncomingMessage)
+export type SendFunc = (chatId: string, text: string) => void;
 ```
 
 The channels-bridge runtime registers commands at startup (e.g., `/oauth`, `/status`, `/cancel`). The channel provider only handles dispatch — it doesn't know about OAuth or any specific command logic.

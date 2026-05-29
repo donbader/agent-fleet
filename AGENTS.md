@@ -26,13 +26,8 @@ agent-fleet/
 │   │   ├── matcher.go        # Host pattern matching (exact, wildcard, suffix)
 │   │   ├── sni.go            # TLS ClientHello parsing, SNI extraction
 │   │   └── mitm.go           # MITM TLS + credential injection (telegram, github, api-key)
-│   ├── bridge/               # channels-bridge runtime (spawns agent + manages channels)
-│   │   ├── bridge.go         # Bridge runtime (Run, routing, shutdown)
-│   │   ├── process.go        # Agent process management (spawn, ACP pipes)
-│   │   ├── acp.go            # ACP message types and JSON wire format
-│   │   └── channel.go        # ChannelProvider interface + message types
-│   ├── channel/
-│   │   └── telegram/         # Telegram channel provider (long-poll, commands, filtering)
+│   ├── bridge/               # [REMOVED — now TypeScript in runtimes/channels-bridge/]
+│   ├── channel/              # [REMOVED — now TypeScript in runtimes/channels-bridge/]
 │   ├── fleet/                # Fleet orchestration (up/down/status via docker compose)
 │   ├── provider/             # Remote provider resolution (clone + cache)
 │   ├── selfupdate/           # GitHub Releases check + binary replacement
