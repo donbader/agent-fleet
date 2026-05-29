@@ -144,52 +144,6 @@ func TestGenerate_MultiAgent(t *testing.T) {
 	}
 }
 
-func TestGenerate_WithBuildContext(t *testing.T) {
-	fleet := &config.ResolvedFleet{
-		Fleet: config.FleetConfig{
-			Fleet:  config.FleetMeta{Name: "dev"},
-			Agents: []string{"coder"},
-			EgressPresets: map[string]config.EgressPreset{
-				"main": {{Host: []string{"*"}}},
-			},
-		},
-		Agents: map[string]*config.AgentConfig{
-			"coder": {
-				Egress: []string{"main"},
-				Runtime: config.ProviderRef{
-					Provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge",
-					Options: map[string]any{
-						"user_base_image_stage": "./Dockerfile",
-						"agent_provider":        "github.com/donbader/agent-fleet/runtimes/codex",
-					},
-				},
-			},
-		},
-	}
-
-	gen := New(fleet, "/repo", nil)
-	data, err := gen.Generate()
-	if err != nil {
-		t.Fatalf("Generate() error: %v", err)
-	}
-
-	var compose ComposeFile
-	if err := yaml.Unmarshal(data, &compose); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	coder := compose.Services["coder"]
-	if coder == nil {
-		t.Fatal("coder service not found")
-	}
-	if coder.Build == nil {
-		t.Fatal("coder should have build config")
-	}
-	if coder.Build.Context != "/repo/agents/coder" {
-		t.Errorf("build context = %q, want /repo/agents/coder", coder.Build.Context)
-	}
-}
-
 func TestGenerate_AgentDependsOnGateway(t *testing.T) {
 	fleet := &config.ResolvedFleet{
 		Fleet: config.FleetConfig{

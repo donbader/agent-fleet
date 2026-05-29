@@ -2,7 +2,11 @@
 package compose
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"log"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/donbader/agent-fleet/pkg/config"
@@ -41,6 +45,16 @@ type Network struct {
 	Internal bool `yaml:"internal,omitempty"`
 }
 
+// RenderContext is the JSON input passed to a provider's render script via stdin.
+type RenderContext struct {
+	Name        string         `json:"name"`
+	FleetName   string         `json:"fleet_name"`
+	Options     map[string]any `json:"options"`
+	Env         map[string]string `json:"env"`
+	GatewayHost string         `json:"gateway_host"`
+	GatewayPort string         `json:"gateway_port"`
+}
+
 // Generator creates Docker Compose files from fleet configuration.
 type Generator struct {
 	fleet    *config.ResolvedFleet
@@ -49,8 +63,6 @@ type Generator struct {
 }
 
 // New creates a new Compose generator for the given resolved fleet.
-// repoRoot is the absolute path to the repository root (where images/ directory lives).
-// resolver is used to resolve remote provider paths to local directories.
 func New(fleet *config.ResolvedFleet, repoRoot string, resolver *provider.Resolver) *Generator {
 	return &Generator{fleet: fleet, repoRoot: repoRoot, resolver: resolver}
 }
@@ -71,7 +83,11 @@ func (g *Generator) Generate() ([]byte, error) {
 	// Generate one service per agent
 	for _, name := range g.fleet.Fleet.Agents {
 		agent := g.fleet.Agents[name]
-		compose.Services[name] = g.agentService(name, agent)
+		svc, err := g.agentService(name, agent)
+		if err != nil {
+			return nil, fmt.Errorf("generating service for agent %q: %w", name, err)
+		}
+		compose.Services[name] = svc
 	}
 
 	return yaml.Marshal(compose)
@@ -94,9 +110,7 @@ func (g *Generator) gatewayService() *Service {
 }
 
 // GatewayRulesYAML generates the gateway rules config file content.
-// This file is mounted into the gateway container at /etc/gateway/rules.yaml.
 func (g *Generator) GatewayRulesYAML() ([]byte, error) {
-	// Compile all rules from all presets in order
 	var allRules []config.EgressRule
 	for _, name := range g.fleet.Fleet.Agents {
 		agent := g.fleet.Agents[name]
@@ -108,7 +122,6 @@ func (g *Generator) GatewayRulesYAML() ([]byte, error) {
 		}
 	}
 
-	// Deduplicate rules (same host pattern + provider)
 	seen := make(map[string]bool)
 	var unique []config.EgressRule
 	for _, r := range allRules {
@@ -125,59 +138,98 @@ func (g *Generator) GatewayRulesYAML() ([]byte, error) {
 	return yaml.Marshal(rulesFile{Rules: unique})
 }
 
-// agentService creates an agent container service definition.
-func (g *Generator) agentService(name string, agent *config.AgentConfig) *Service {
-	// Resolve the runtime provider to a local build context
-	buildCtx := filepath.Join(g.repoRoot, "images", "sandbox")
+// agentService creates an agent container service definition by executing
+// the provider's render script if available, or falling back to defaults.
+func (g *Generator) agentService(name string, agent *config.AgentConfig) (*Service, error) {
+	// Resolve the runtime provider to a local directory
+	providerDir := filepath.Join(g.repoRoot, "images", "sandbox")
 	if g.resolver != nil {
 		if resolved, err := g.resolver.Resolve(agent.Runtime.Provider); err == nil {
-			buildCtx = resolved
+			providerDir = resolved
 		}
 	}
 
-	svc := &Service{
-		Build: &BuildConfig{
-			Context:    buildCtx,
-			Dockerfile: "Dockerfile",
-		},
-		Networks:  []string{g.internalNetworkName()},
-		DependsOn: []string{g.gatewayServiceName()},
-		CapAdd:    []string{"NET_ADMIN"}, // Required for iptables
-		Environment: map[string]string{
-			"AGENT_NAME":    name,
-			"GATEWAY_HOST":  g.gatewayServiceName(),
-			"GATEWAY_PORT":  "8080",
-		},
-		Restart: "unless-stopped",
+	// Try to execute the provider's render script
+	svc, err := g.executeRenderScript(providerDir, name, agent)
+	if err != nil {
+		log.Printf("[compose] render script failed for %s, using defaults: %v", name, err)
+		svc = nil
 	}
 
-	// Add user-defined env vars
-	for k, v := range agent.Env {
-		svc.Environment[k] = v
-	}
+	if svc == nil {
+		// Fallback: default service definition
+		svc = &Service{
+			Build: &BuildConfig{
+				Context:    providerDir,
+				Dockerfile: "Dockerfile",
+			},
+			Environment: map[string]string{
+				"AGENT_NAME":   name,
+				"GATEWAY_HOST": g.gatewayServiceName(),
+				"GATEWAY_PORT": "8080",
+			},
+			CapAdd:  []string{"NET_ADMIN"},
+			Restart: "unless-stopped",
+		}
 
-	// Add custom build context if user_base_image_stage is set
-	if stage := g.userBaseImageStage(agent); stage != "" {
-		svc.Build = &BuildConfig{
-			Context:    filepath.Join(g.repoRoot, "agents", name),
-			Dockerfile: "Dockerfile",
+		// Add user-defined env vars
+		for k, v := range agent.Env {
+			svc.Environment[k] = v
 		}
 	}
 
-	return svc
+	// Fleet-level concerns (always applied by CLI, not provider)
+	svc.Networks = []string{g.internalNetworkName()}
+	svc.DependsOn = []string{g.gatewayServiceName()}
+
+	return svc, nil
 }
 
-// userBaseImageStage checks if the agent has a custom Dockerfile stage.
-func (g *Generator) userBaseImageStage(agent *config.AgentConfig) string {
-	if agent.Runtime.Options == nil {
-		return ""
+// executeRenderScript runs the provider's render.sh and parses its YAML output.
+func (g *Generator) executeRenderScript(providerDir string, name string, agent *config.AgentConfig) (*Service, error) {
+	renderScript := filepath.Join(providerDir, "render.sh")
+
+	// Check if render script exists
+	cmd := exec.Command("test", "-f", renderScript)
+	if cmd.Run() != nil {
+		return nil, fmt.Errorf("no render.sh found at %s", renderScript)
 	}
-	if stage, ok := agent.Runtime.Options["user_base_image_stage"]; ok {
-		if s, ok := stage.(string); ok {
-			return s
-		}
+
+	// Build render context
+	ctx := RenderContext{
+		Name:        name,
+		FleetName:   g.fleet.Fleet.Fleet.Name,
+		Options:     agent.Runtime.Options,
+		Env:         agent.Env,
+		GatewayHost: g.gatewayServiceName(),
+		GatewayPort: "8080",
 	}
-	return ""
+
+	contextJSON, err := json.Marshal(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling render context: %w", err)
+	}
+
+	// Execute render script
+	cmd = exec.Command("bash", renderScript)
+	cmd.Dir = providerDir
+	cmd.Stdin = bytes.NewReader(contextJSON)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("render.sh failed: %w\nstderr: %s", err, stderr.String())
+	}
+
+	// Parse YAML output into Service
+	var svc Service
+	if err := yaml.Unmarshal(stdout.Bytes(), &svc); err != nil {
+		return nil, fmt.Errorf("parsing render.sh output: %w", err)
+	}
+
+	return &svc, nil
 }
 
 func (g *Generator) gatewayServiceName() string {
