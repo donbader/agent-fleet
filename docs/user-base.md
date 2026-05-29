@@ -80,20 +80,38 @@ runtime:
     user_base_image_stage: "./Dockerfile"
 ```
 
-Your Dockerfile installs extra tools:
+Your Dockerfile is a **template** — the provider injects it into its own Dockerfile and substitutes magic variables:
 
 ```dockerfile
-# agents/coder/Dockerfile
-FROM node:22-slim
-
+# agents/coder/Dockerfile (partial template — not a standalone Dockerfile)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     fd-find \
     jq \
     && rm -rf /var/lib/apt/lists/*
+
+COPY home-override/.gitconfig ${AGENT_HOME}/.gitconfig
 ```
 
-The runtime's Dockerfile uses Docker `additional_contexts` to pull tools from your image into the final container. You don't need to include bridge/iptables setup — the runtime handles that.
+### Provider Magic Variables
+
+Each provider defines variables for things it controls:
+
+| Variable | Description | Example |
+|----------|-------------|--------|
+| `${AGENT_HOME}` | Agent's home directory | `/home/agent` |
+| `${AGENT_USER}` | Agent's OS username | `agent` |
+
+Providers may define additional variables in their own docs. Users should not hardcode internal paths — use variables instead.
+
+### How It Works
+
+1. Provider reads your partial Dockerfile
+2. Substitutes magic variables
+3. Injects it into the runtime's Dockerfile (between base setup and finalize)
+4. Build context is set to your agent directory (so `COPY` paths are relative to `agents/coder/`)
+
+You don't need to include runtime setup (bridge, iptables, entrypoint) — the provider handles that.
 
 ## Putting It Together
 

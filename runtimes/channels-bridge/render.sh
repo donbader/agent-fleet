@@ -5,7 +5,7 @@
 #
 # Supported options:
 #   agent_provider       - runtime provider for the agent process (default: codex)
-#   user_base_image_stage - path to user's Dockerfile for extra tools
+#   user_base_image_stage - path to user's partial Dockerfile (template injection)
 #   channels             - array of channel configs (provider + options)
 
 set -e
@@ -18,37 +18,16 @@ GATEWAY_PORT=$(agent-fleet ctx .gateway_port)
 AGENT_PROVIDER=$(agent-fleet ctx .options.agent_provider --default "codex")
 AGENT_CMD=$(basename "$AGENT_PROVIDER")
 
-# User base image stage (custom Dockerfile for extra tools)
-USER_BASE=$(agent-fleet ctx .options.user_base_image_stage --default "")
-
 # Extract telegram channel config using array indexing
 ALLOWED_USERS=$(agent-fleet ctx .options.channels.0.options.allowed_users --default "[]")
 if [ "$ALLOWED_USERS" != "[]" ] && [ -n "$ALLOWED_USERS" ]; then
     ALLOWED_USERS=$(echo "$ALLOWED_USERS" | tr -d '[]"' | tr ',' ',')
 fi
 
-# Build section — include additional_contexts for user base image
-if [ -n "$USER_BASE" ]; then
-    # user_base_image_stage points to a Dockerfile in the agent's directory
-    # Docker Compose additional_contexts lets our Dockerfile reference it
-    cat <<EOF
-build:
-  context: .
-  dockerfile: Dockerfile
-  additional_contexts:
-    user-base: ../../agents/${NAME}
-EOF
-else
-    cat <<EOF
-build:
-  context: .
-  dockerfile: Dockerfile
-  additional_contexts:
-    user-base: docker-image://node:22-slim
-EOF
-fi
-
 cat <<EOF
+build:
+  context: .
+  dockerfile: Dockerfile
 cap_add:
   - NET_ADMIN
 environment:

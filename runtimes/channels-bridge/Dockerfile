@@ -2,18 +2,9 @@
 # Connects Telegram to an agent process via ACP protocol.
 #
 # Self-contained: clone this folder → docker build works.
-# Supports user_base_image_stage via Docker additional_contexts.
+# Supports user_base_image_stage via template injection (see docs/user-base.md).
 
-# --- User tools stage ---
-# Built from additional_contexts "user-base" (defaults to scratch if not provided)
-FROM user-base AS user-tools
-
-# --- Main runtime ---
 FROM node:22-slim
-
-# Copy user-installed binaries (no-op when user-base is scratch)
-COPY --from=user-tools /usr/local/bin/ /usr/local/bin/
-COPY --from=user-tools /usr/bin/ /usr/bin/
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
