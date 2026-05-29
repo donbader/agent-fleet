@@ -2,14 +2,30 @@
 # Render script for the channels-bridge runtime provider.
 # Uses `agent-fleet ctx` to extract values from the render context.
 # No external dependencies required.
+#
+# Supported options:
+#   agent_provider  - runtime provider for the agent process (default: codex)
+#   channels        - array of channel configs (provider + options)
+#   channels[0].options.allowed_users - Telegram user filter
 
 set -e
 
 NAME=$(agent-fleet ctx .name)
 GATEWAY_HOST=$(agent-fleet ctx .gateway_host)
 GATEWAY_PORT=$(agent-fleet ctx .gateway_port)
-AGENT_CMD=$(agent-fleet ctx .options.agent_cmd --default "codex")
-ALLOWED_USERS=$(agent-fleet ctx .options.allowed_users --default "")
+
+# Agent command derived from agent_provider
+AGENT_PROVIDER=$(agent-fleet ctx .options.agent_provider --default "codex")
+# Extract just the last path segment as the command name
+AGENT_CMD=$(basename "$AGENT_PROVIDER")
+
+# Extract telegram channel config using array indexing
+ALLOWED_USERS=$(agent-fleet ctx .options.channels.0.options.allowed_users --default "[]")
+# Convert JSON array ["@user1","@user2"] to comma-separated string
+if [ "$ALLOWED_USERS" != "[]" ] && [ -n "$ALLOWED_USERS" ]; then
+    # Strip brackets and quotes, join with commas
+    ALLOWED_USERS=$(echo "$ALLOWED_USERS" | tr -d '[]"' | tr ',' ',')
+fi
 
 cat <<EOF
 build:
