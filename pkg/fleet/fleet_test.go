@@ -212,6 +212,13 @@ func TestFleet_ComposeFilePath(t *testing.T) {
 func setupTestFleet(t *testing.T, dir string) {
 	t.Helper()
 
+	// Create go.mod so findRepoRoot works
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0644)
+
+	// Create images/ directory
+	os.MkdirAll(filepath.Join(dir, "images", "gateway"), 0755)
+	os.MkdirAll(filepath.Join(dir, "images", "sandbox"), 0755)
+
 	fleetContent := `
 fleet:
   name: test-fleet

@@ -66,14 +66,20 @@ func (f *Fleet) Up(ctx context.Context) error {
 		return fmt.Errorf("resolving config: %w", err)
 	}
 
-	// 2. Generate docker-compose.yml
-	gen := compose.New(resolved)
+	// 2. Find repo root (where images/ lives)
+	repoRoot, err := findRepoRoot(f.fleetFile)
+	if err != nil {
+		return fmt.Errorf("finding repo root: %w", err)
+	}
+
+	// 3. Generate docker-compose.yml
+	gen := compose.New(resolved, repoRoot)
 	data, err := gen.Generate()
 	if err != nil {
 		return fmt.Errorf("generating compose: %w", err)
 	}
 
-	// 3. Write to output directory
+	// 4. Write to output directory
 	if err := os.MkdirAll(f.outputDir, 0755); err != nil {
 		return fmt.Errorf("creating output dir: %w", err)
 	}
@@ -83,7 +89,7 @@ func (f *Fleet) Up(ctx context.Context) error {
 		return fmt.Errorf("writing compose file: %w", err)
 	}
 
-	// 4. Start containers
+	// 5. Start containers
 	projectName := resolved.Fleet.Fleet.Name
 	if err := f.runner.Up(ctx, composeFile, projectName); err != nil {
 		return fmt.Errorf("starting fleet: %w", err)
@@ -163,4 +169,34 @@ func (r *DockerComposeRunner) Ps(ctx context.Context, composeFile string, projec
 		return "", err
 	}
 	return string(out), nil
+}
+
+// findRepoRoot walks up from the given path looking for the repo root.
+// It looks for go.mod or .git as indicators.
+func findRepoRoot(fromPath string) (string, error) {
+	dir, err := filepath.Abs(filepath.Dir(fromPath))
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		// Check for go.mod (primary indicator)
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		// Check for .git
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir, nil
+		}
+		// Check for images/ directory
+		if _, err := os.Stat(filepath.Join(dir, "images")); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("could not find repo root (no go.mod, .git, or images/ found above %s)", fromPath)
+		}
+		dir = parent
+	}
 }

@@ -3,7 +3,7 @@ package compose
 
 import (
 	"fmt"
-	"strings"
+	"path/filepath"
 
 	"github.com/donbader/agent-fleet/pkg/config"
 	"gopkg.in/yaml.v3"
@@ -11,10 +11,8 @@ import (
 
 // ComposeFile represents a docker-compose.yml structure.
 type ComposeFile struct {
-	Version  string                    `yaml:"version,omitempty"`
-	Services map[string]*Service       `yaml:"services"`
-	Networks map[string]*Network       `yaml:"networks"`
-	Volumes  map[string]*Volume        `yaml:"volumes,omitempty"`
+	Services map[string]*Service `yaml:"services"`
+	Networks map[string]*Network `yaml:"networks"`
 }
 
 // Service represents a Docker Compose service.
@@ -42,17 +40,16 @@ type Network struct {
 	Internal bool `yaml:"internal,omitempty"`
 }
 
-// Volume represents a Docker Compose volume.
-type Volume struct{}
-
 // Generator creates Docker Compose files from fleet configuration.
 type Generator struct {
-	fleet *config.ResolvedFleet
+	fleet    *config.ResolvedFleet
+	repoRoot string // absolute path to repo root (where images/ lives)
 }
 
 // New creates a new Compose generator for the given resolved fleet.
-func New(fleet *config.ResolvedFleet) *Generator {
-	return &Generator{fleet: fleet}
+// repoRoot is the absolute path to the repository root (where images/ directory lives).
+func New(fleet *config.ResolvedFleet, repoRoot string) *Generator {
+	return &Generator{fleet: fleet, repoRoot: repoRoot}
 }
 
 // Generate produces the docker-compose.yml content as YAML bytes.
@@ -80,7 +77,10 @@ func (g *Generator) Generate() ([]byte, error) {
 // gatewayService creates the gateway proxy service definition.
 func (g *Generator) gatewayService() *Service {
 	return &Service{
-		Image:   "ghcr.io/donbader/agent-fleet/gateway:latest",
+		Build: &BuildConfig{
+			Context:    g.repoRoot,
+			Dockerfile: filepath.Join("images", "gateway", "Dockerfile"),
+		},
 		Networks: []string{g.internalNetworkName(), g.externalNetworkName()},
 		Environment: map[string]string{
 			"FLEET_NAME": g.fleet.Fleet.Fleet.Name,
@@ -92,7 +92,10 @@ func (g *Generator) gatewayService() *Service {
 // agentService creates an agent container service definition.
 func (g *Generator) agentService(name string, agent *config.AgentConfig) *Service {
 	svc := &Service{
-		Image:     g.agentImage(agent),
+		Build: &BuildConfig{
+			Context:    filepath.Join(g.repoRoot, "images", "sandbox"),
+			Dockerfile: "Dockerfile",
+		},
 		Networks:  []string{g.internalNetworkName()},
 		DependsOn: []string{g.gatewayServiceName()},
 		CapAdd:    []string{"NET_ADMIN"}, // Required for iptables
@@ -109,26 +112,15 @@ func (g *Generator) agentService(name string, agent *config.AgentConfig) *Servic
 		svc.Environment[k] = v
 	}
 
-	// Add build context if user_base_image_stage is set
+	// Add custom build context if user_base_image_stage is set
 	if stage := g.userBaseImageStage(agent); stage != "" {
 		svc.Build = &BuildConfig{
-			Context:    fmt.Sprintf("./agents/%s", name),
+			Context:    filepath.Join(g.repoRoot, "agents", name),
 			Dockerfile: "Dockerfile",
 		}
-		svc.Image = "" // Use build instead
 	}
 
 	return svc
-}
-
-// agentImage determines the Docker image for an agent based on its runtime provider.
-func (g *Generator) agentImage(agent *config.AgentConfig) string {
-	// Extract the runtime name from the provider path
-	// e.g., "github.com/donbader/agent-fleet/runtimes/codex" -> "codex"
-	provider := agent.Runtime.Provider
-	parts := strings.Split(provider, "/")
-	runtimeName := parts[len(parts)-1]
-	return fmt.Sprintf("ghcr.io/donbader/agent-fleet/%s:latest", runtimeName)
 }
 
 // userBaseImageStage checks if the agent has a custom Dockerfile stage.
