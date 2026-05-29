@@ -17,10 +17,13 @@ Opinionated agent sandbox orchestrator. Deploy AI coding agents with enforced se
 curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | sh
 ```
 
-**Private repo:**
+**Private repo (uses `gh` CLI auth automatically):**
 ```bash
-curl -sSL -H "Authorization: token $GITHUB_TOKEN" \
-  https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | GITHUB_TOKEN=$GITHUB_TOKEN sh
+# If you're logged in with gh CLI, it just works:
+curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | sh
+
+# Or explicitly pass a token:
+curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | GITHUB_TOKEN=$GITHUB_TOKEN sh
 ```
 
 **Custom install directory:**
@@ -36,9 +39,7 @@ go install github.com/donbader/agent-fleet/cmd/agent-fleet@latest
 **Upgrade to latest:**
 ```bash
 agent-fleet upgrade
-
-# For private repos:
-GITHUB_TOKEN=ghp_xxx agent-fleet upgrade
+# Uses gh CLI auth automatically. Falls back to GITHUB_TOKEN if gh not available.
 ```
 
 ## Quick Start

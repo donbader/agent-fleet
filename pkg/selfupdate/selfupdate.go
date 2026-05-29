@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 )
@@ -41,7 +42,7 @@ type Updater struct {
 func New(cfg Config) *Updater {
 	token := cfg.Token
 	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
+		token = resolveToken()
 	}
 	cfg.Token = token
 
@@ -49,6 +50,20 @@ func New(cfg Config) *Updater {
 		cfg:    cfg,
 		client: &http.Client{},
 	}
+}
+
+// resolveToken tries gh CLI first, then GITHUB_TOKEN env var.
+func resolveToken() string {
+	// Try gh CLI
+	if out, err := exec.Command("gh", "auth", "token").Output(); err == nil {
+		token := strings.TrimSpace(string(out))
+		if token != "" {
+			return token
+		}
+	}
+
+	// Fallback to env var
+	return os.Getenv("GITHUB_TOKEN")
 }
 
 // CheckUpdate checks if a newer version is available.

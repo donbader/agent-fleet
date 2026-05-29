@@ -43,10 +43,26 @@ detect_platform() {
     info "Detected platform: ${OS}/${ARCH}"
 }
 
+# Resolve GitHub token: gh CLI > GITHUB_TOKEN env var
+resolve_token() {
+    if [ -n "$GITHUB_TOKEN" ]; then
+        return
+    fi
+
+    if command -v gh >/dev/null 2>&1; then
+        GITHUB_TOKEN=$(gh auth token 2>/dev/null || true)
+        if [ -n "$GITHUB_TOKEN" ]; then
+            info "Using token from gh CLI"
+        fi
+    fi
+}
+
 # Get the latest release version
 get_latest_version() {
     local url="https://api.github.com/repos/${REPO}/releases/latest"
     local auth_header=""
+
+    resolve_token
 
     if [ -n "$GITHUB_TOKEN" ]; then
         auth_header="Authorization: token ${GITHUB_TOKEN}"
