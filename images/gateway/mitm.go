@@ -16,13 +16,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
 )
 
 // MITMConfig holds the CA certificate and key for MITM interception.
 type MITMConfig struct {
-	CA     *x509.Certificate
-	CAKey  *ecdsa.PrivateKey
+	CA    *x509.Certificate
+	CAKey *ecdsa.PrivateKey
 }
 
 // NewMITMConfig generates a self-signed CA for MITM interception.
@@ -70,10 +69,10 @@ func (m *MITMConfig) generateCert(hostname string) (*tls.Certificate, error) {
 		Subject: pkix.Name{
 			CommonName: hostname,
 		},
-		DNSNames:  []string{hostname},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(24 * time.Hour),
-		KeyUsage:  x509.KeyUsageDigitalSignature,
+		DNSNames:    []string{hostname},
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().Add(24 * time.Hour),
+		KeyUsage:    x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 

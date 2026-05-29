@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -58,8 +58,8 @@ func New(cfg Config) *Provider {
 	}
 
 	return &Provider{
-		cfg:            cfg,
-		baseURL:        baseURL,
+		cfg:     cfg,
+		baseURL: baseURL,
 		client: &http.Client{
 			Timeout: time.Duration(pollTimeout+5) * time.Second,
 		},
@@ -70,7 +70,7 @@ func New(cfg Config) *Provider {
 
 // Start begins long-polling for updates. Blocks until context is cancelled.
 func (p *Provider) Start(ctx context.Context) error {
-	log.Printf("[telegram] starting long-poll (allowed users: %v)", p.cfg.AllowedUsers)
+	slog.Info("starting long-poll", "allowed_users", p.cfg.AllowedUsers)
 
 	for {
 		select {
@@ -84,7 +84,7 @@ func (p *Provider) Start(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil // context cancelled
 			}
-			log.Printf("[telegram] getUpdates error: %v", err)
+			slog.Error("getUpdates failed", "error", err)
 			time.Sleep(time.Second) // backoff on error
 			continue
 		}
@@ -98,7 +98,7 @@ func (p *Provider) Start(ctx context.Context) error {
 
 // Stop gracefully stops the provider.
 func (p *Provider) Stop(ctx context.Context) error {
-	log.Printf("[telegram] stopped")
+	slog.Info("telegram stopped")
 	return nil
 }
 
@@ -228,7 +228,7 @@ func (p *Provider) handleUpdate(ctx context.Context, update Update) {
 
 	// Check if user is allowed
 	if !p.isAllowed(msg.From) {
-		log.Printf("[telegram] ignoring message from unauthorized user: @%s", msg.From.Username)
+		slog.Warn("ignoring unauthorized user", "username", msg.From.Username)
 		return
 	}
 
@@ -289,12 +289,12 @@ func (p *Provider) handleCommand(ctx context.Context, chatID string, text string
 	p.mu.RUnlock()
 
 	if !exists {
-		log.Printf("[telegram] unknown command: /%s", cmdName)
+		slog.Warn("unknown command", "command", cmdName)
 		return
 	}
 
 	if err := handler(ctx, chatID, args); err != nil {
-		log.Printf("[telegram] command /%s error: %v", cmdName, err)
+		slog.Error("command failed", "command", cmdName, "error", err)
 		_ = p.Send(ctx, chatID, bridge.OutgoingMessage{
 			Text: fmt.Sprintf("Error: %v", err),
 		})

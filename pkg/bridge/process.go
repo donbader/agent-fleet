@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
@@ -133,7 +133,7 @@ func (ap *AgentProcess) Stop() {
 	select {
 	case <-ap.done:
 	default:
-		log.Printf("[bridge] waiting for agent to exit...")
+		slog.Info("waiting for agent to exit")
 	}
 }
 

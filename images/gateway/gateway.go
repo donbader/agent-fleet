@@ -11,7 +11,6 @@ import (
 	"net"
 	"strconv"
 	"sync"
-
 )
 
 // Gateway is the transparent egress proxy.
