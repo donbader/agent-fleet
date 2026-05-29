@@ -1,9 +1,0 @@
-# Agent: reviewer
-# Pure codex runtime — no Telegram channel.
-# Use `docker exec -it dev-team-reviewer-1 codex` to interact.
-# Strict egress: only GitHub + OpenAI API reachable.
-
-egress: [strict]
-
-runtime:
-  provider: "github.com/donbader/agent-fleet/runtimes/codex"

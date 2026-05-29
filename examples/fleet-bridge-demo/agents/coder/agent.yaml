@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../../schemas/agent.schema.json
+#
+# Channels-bridge runtime: connects Telegram to a codex agent via ACP protocol.
+# Each agent gets its own Telegram bot instance.
+
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge"
+  options:
+    agent_provider: "codex"
+    channels:
+      - provider: "telegram"
+        options:
+          allowed_users: ["${TELEGRAM_ALLOWED_USERS}"]
+
+egress:
+  - allow-all
+
+env:
+  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"

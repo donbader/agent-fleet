@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../schemas/agent.schema.json
+#
+# Strategy 3: Named volume + customized user base template
+# - Provider outputs home volume in render.sh (same as 1.1)
+# - User provides a partial Dockerfile for extra deps + home-override
+# - Docker populates the volume from image on first run
+
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+  options:
+    user_base_image_stage: "./Dockerfile"
+
+egress:
+  - allow-all

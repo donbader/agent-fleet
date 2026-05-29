@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../../schemas/fleet.schema.json
+
+fleet:
+  name: bridge-demo
+
+agents:
+  - coder
+
+egress-presets:
+  allow-all:
+    - host: ["*"]

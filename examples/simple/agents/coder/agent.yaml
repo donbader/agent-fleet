@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/donbader/agent-fleet/main/schemas/agent.schema.json
-
-# Agent: coder
-# Simple Codex agent with GitHub + Telegram egress
-
-egress: [telegram-bot-1, main]
-
-runtime:
-  provider: "github.com/donbader/agent-fleet/runtimes/codex"
