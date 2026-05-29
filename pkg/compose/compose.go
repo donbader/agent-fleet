@@ -240,6 +240,14 @@ func (g *Generator) executeRenderScript(providerDir string, name string, agent *
 		return nil, fmt.Errorf("parsing render.sh output: %w", err)
 	}
 
+	// Resolve relative build context paths against the provider directory.
+	// The render script runs with cwd=providerDir, so relative paths like "."
+	// refer to providerDir — but Docker Compose resolves them relative to the
+	// compose file location. Convert to absolute to avoid mismatch.
+	if svc.Build != nil && svc.Build.Context != "" && !filepath.IsAbs(svc.Build.Context) {
+		svc.Build.Context = filepath.Join(providerDir, svc.Build.Context)
+	}
+
 	return &svc, nil
 }
 
