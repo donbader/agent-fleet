@@ -40,17 +40,13 @@ Docker populates the named volume from the image on first run, so your config fi
 
 ### Alternative: Bind Mount (Strategy 2)
 
-If you want to version-control the entire home directory with GitHub:
+If you want to version-control the entire home directory with GitHub, use the `volumes` field in agent.yaml:
 
 ```yaml
 # agent.yaml
-runtime:
-  provider: "github.com/donbader/agent-fleet/runtimes/codex"
-  options:
-    home_mount: bind    # use bind mount instead of named volume
+volumes:
+  - "./home:/home/agent"
 ```
-
-This mounts `agents/<name>/home-override/` directly as `/home/agent`:
 
 ```yaml
 # Generated compose:

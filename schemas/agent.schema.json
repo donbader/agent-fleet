@@ -33,6 +33,13 @@
         "type": "string",
         "pattern": "^(\\d+:\\d+|\\d+)$"
       }
+    },
+    "volumes": {
+      "type": "array",
+      "description": "Docker volumes to mount in the agent container. Format: \"name:/path\" (named volume) or \"./host/path:/container/path\" (bind mount). Append :ro for read-only.",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "definitions": {
