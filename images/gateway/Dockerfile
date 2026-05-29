@@ -2,6 +2,8 @@
 # Self-contained build — clone this folder and run: docker build .
 FROM golang:1.24-alpine AS builder
 
+ENV GOPRIVATE=github.com/donbader/*
+
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
