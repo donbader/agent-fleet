@@ -15,8 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/donbader/agent-fleet/pkg/config"
-	"github.com/donbader/agent-fleet/pkg/gateway"
+	"github.com/donbader/agent-fleet/gateway"
 )
 
 // TestProxy_Passthrough tests that the proxy passes through allowed traffic.
@@ -34,7 +33,7 @@ func TestProxy_Passthrough(t *testing.T) {
 	// Create gateway with a rule that allows the upstream host
 	gw, err := gateway.New(gateway.Config{
 		ListenAddr: "127.0.0.1:0",
-		Presets: map[string]config.EgressPreset{
+		Presets: map[string]gateway.EgressPreset{
 			"main": {{Host: []string{host, "127.0.0.1"}}},
 		},
 		ActivePresets: []string{"main"},
@@ -88,7 +87,7 @@ func TestProxy_DefaultDeny(t *testing.T) {
 	// Create gateway with rules that only allow specific hosts
 	gw, err := gateway.New(gateway.Config{
 		ListenAddr: "127.0.0.1:0",
-		Presets: map[string]config.EgressPreset{
+		Presets: map[string]gateway.EgressPreset{
 			"main": {{Host: []string{"allowed.example.com"}}},
 		},
 		ActivePresets: []string{"main"},
@@ -140,7 +139,7 @@ func TestProxy_MITM_TelegramTokenRewrite(t *testing.T) {
 	// Create gateway with Telegram rule
 	gw, err := gateway.New(gateway.Config{
 		ListenAddr: "127.0.0.1:0",
-		Presets: map[string]config.EgressPreset{
+		Presets: map[string]gateway.EgressPreset{
 			"telegram": {{
 				Host:     []string{"api.telegram.org"},
 				Provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot",
@@ -201,7 +200,7 @@ func TestProxy_MITM_GithubPATInjection(t *testing.T) {
 
 	gw, err := gateway.New(gateway.Config{
 		ListenAddr: "127.0.0.1:0",
-		Presets: map[string]config.EgressPreset{
+		Presets: map[string]gateway.EgressPreset{
 			"main": {{
 				Host:     []string{"api.github.com"},
 				Provider: "github.com/donbader/agent-fleet/egress-rules/github-pat",
@@ -256,7 +255,7 @@ func TestProxy_MITM_GithubPATInjection(t *testing.T) {
 func TestProxy_RuleOrder(t *testing.T) {
 	gw, err := gateway.New(gateway.Config{
 		ListenAddr: "127.0.0.1:0",
-		Presets: map[string]config.EgressPreset{
+		Presets: map[string]gateway.EgressPreset{
 			"specific": {{Host: []string{"api.github.com"}, Provider: "github-pat"}},
 			"catchall": {{Host: []string{"*"}}},
 		},
@@ -282,7 +281,7 @@ func TestProxy_RuleOrder(t *testing.T) {
 func TestProxy_MultiplePresets(t *testing.T) {
 	gw, err := gateway.New(gateway.Config{
 		ListenAddr: "127.0.0.1:0",
-		Presets: map[string]config.EgressPreset{
+		Presets: map[string]gateway.EgressPreset{
 			"telegram": {
 				{Host: []string{"api.telegram.org"}, Provider: "telegram-bot"},
 			},

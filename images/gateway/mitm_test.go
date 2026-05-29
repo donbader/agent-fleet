@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/donbader/agent-fleet/pkg/config"
 )
 
 func TestApplyInjection_TelegramBot(t *testing.T) {
@@ -12,7 +11,7 @@ func TestApplyInjection_TelegramBot(t *testing.T) {
 	req.URL.Path = "/botDUMMY_TOKEN/getUpdates"
 	req.RequestURI = "/botDUMMY_TOKEN/getUpdates?offset=0"
 
-	rule := config.EgressRule{
+	rule := EgressRule{
 		Host:     []string{"api.telegram.org"},
 		Provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot",
 		Options:  map[string]any{"token": "123456:ABC-DEF"},
@@ -34,7 +33,7 @@ func TestApplyInjection_TelegramBot(t *testing.T) {
 func TestApplyInjection_GithubPAT(t *testing.T) {
 	req, _ := http.NewRequest("GET", "https://api.github.com/repos/owner/repo", nil)
 
-	rule := config.EgressRule{
+	rule := EgressRule{
 		Host:     []string{"api.github.com"},
 		Provider: "github.com/donbader/agent-fleet/egress-rules/github-pat",
 		Options:  map[string]any{"token": "ghp_abc123"},
@@ -52,7 +51,7 @@ func TestApplyInjection_GithubPAT(t *testing.T) {
 func TestApplyInjection_APIKey(t *testing.T) {
 	req, _ := http.NewRequest("GET", "https://api.example.com/v1/data", nil)
 
-	rule := config.EgressRule{
+	rule := EgressRule{
 		Host:     []string{"api.example.com"},
 		Provider: "github.com/donbader/agent-fleet/egress-rules/api-key",
 		Options:  map[string]any{"header": "X-API-Key", "value": "secret123"},

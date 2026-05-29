@@ -3,22 +3,21 @@ package gateway
 import (
 	"strings"
 
-	"github.com/donbader/agent-fleet/pkg/config"
 )
 
 // matchRule finds the first matching egress rule for the given hostname.
 // Returns the matched rule and whether a match was found.
-func matchRule(rules []config.EgressRule, hostname string) (config.EgressRule, bool) {
+func matchRule(rules []EgressRule, hostname string) (EgressRule, bool) {
 	for _, rule := range rules {
 		if ruleMatchesHost(rule, hostname) {
 			return rule, true
 		}
 	}
-	return config.EgressRule{}, false
+	return EgressRule{}, false
 }
 
 // ruleMatchesHost checks if a rule matches the given hostname.
-func ruleMatchesHost(rule config.EgressRule, hostname string) bool {
+func ruleMatchesHost(rule EgressRule, hostname string) bool {
 	// If rule has host patterns, check them
 	if len(rule.Host) > 0 {
 		for _, pattern := range rule.Host {

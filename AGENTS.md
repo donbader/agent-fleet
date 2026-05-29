@@ -16,7 +16,8 @@ agent-fleet deploys AI coding agents (Codex, Claude Code, Pi) inside Docker cont
 
 ```
 agent-fleet/
-├── cmd/agent-fleet/          # CLI entrypoint (up, down, status, validate)
+├── cmd/agent-fleet/          # CLI entrypoint (up, down, status, validate, init, upgrade)
+├── cmd/gateway/              # Standalone gateway proxy entrypoint
 ├── pkg/
 │   ├── config/               # fleet.yaml + agent.yaml parsing and validation
 │   ├── compose/              # Docker Compose generation from resolved fleet
@@ -33,7 +34,12 @@ agent-fleet/
 │   ├── channel/
 │   │   └── telegram/         # Telegram channel provider (long-poll, commands, filtering)
 │   ├── fleet/                # Fleet orchestration (up/down/status via docker compose)
+│   ├── provider/             # Remote provider resolution (clone + cache)
+│   ├── selfupdate/           # GitHub Releases check + binary replacement
 │   └── compose/              # Docker Compose YAML generation
+├── images/
+│   ├── gateway/              # Gateway proxy Dockerfile
+│   └── sandbox/              # Agent sandbox Dockerfile (iptables + entrypoint)
 ├── schemas/
 │   ├── fleet.schema.json     # Top-level fleet.yaml validation
 │   └── agent.schema.json     # Top-level agent.yaml validation

@@ -3,8 +3,9 @@ package config
 
 // FleetConfig represents the top-level fleet.yaml configuration.
 type FleetConfig struct {
-	Fleet        FleetMeta              `yaml:"fleet"`
-	Agents       []string               `yaml:"agents"`
+	Schema        string                 `yaml:"$schema,omitempty"`
+	Fleet         FleetMeta              `yaml:"fleet"`
+	Agents        []string               `yaml:"agents"`
 	EgressPresets map[string]EgressPreset `yaml:"egress-presets"`
 }
 
@@ -26,8 +27,9 @@ type EgressRule struct {
 
 // AgentConfig represents a per-agent agent.yaml configuration.
 type AgentConfig struct {
-	Egress  []string       `yaml:"egress"`
-	Runtime ProviderRef    `yaml:"runtime"`
+	Schema  string            `yaml:"$schema,omitempty"`
+	Egress  []string          `yaml:"egress"`
+	Runtime ProviderRef       `yaml:"runtime"`
 	Env     map[string]string `yaml:"env,omitempty"`
 }
 

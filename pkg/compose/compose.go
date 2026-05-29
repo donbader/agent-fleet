@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/donbader/agent-fleet/pkg/config"
+	"github.com/donbader/agent-fleet/pkg/provider"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,12 +45,14 @@ type Network struct {
 type Generator struct {
 	fleet    *config.ResolvedFleet
 	repoRoot string // absolute path to repo root (where images/ lives)
+	resolver *provider.Resolver // resolves remote provider paths to local dirs
 }
 
 // New creates a new Compose generator for the given resolved fleet.
 // repoRoot is the absolute path to the repository root (where images/ directory lives).
-func New(fleet *config.ResolvedFleet, repoRoot string) *Generator {
-	return &Generator{fleet: fleet, repoRoot: repoRoot}
+// resolver is used to resolve remote provider paths to local directories.
+func New(fleet *config.ResolvedFleet, repoRoot string, resolver *provider.Resolver) *Generator {
+	return &Generator{fleet: fleet, repoRoot: repoRoot, resolver: resolver}
 }
 
 // Generate produces the docker-compose.yml content as YAML bytes.
@@ -124,9 +127,17 @@ func (g *Generator) GatewayRulesYAML() ([]byte, error) {
 
 // agentService creates an agent container service definition.
 func (g *Generator) agentService(name string, agent *config.AgentConfig) *Service {
+	// Resolve the runtime provider to a local build context
+	buildCtx := filepath.Join(g.repoRoot, "images", "sandbox")
+	if g.resolver != nil {
+		if resolved, err := g.resolver.Resolve(agent.Runtime.Provider); err == nil {
+			buildCtx = resolved
+		}
+	}
+
 	svc := &Service{
 		Build: &BuildConfig{
-			Context:    filepath.Join(g.repoRoot, "images", "sandbox"),
+			Context:    buildCtx,
 			Dockerfile: "Dockerfile",
 		},
 		Networks:  []string{g.internalNetworkName()},

@@ -26,7 +26,7 @@ func TestGenerate_SimpleFleet(t *testing.T) {
 		},
 	}
 
-	gen := New(fleet, "/repo")
+	gen := New(fleet, "/repo", nil)
 	data, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Generate() error: %v", err)
@@ -106,7 +106,7 @@ func TestGenerate_MultiAgent(t *testing.T) {
 		},
 	}
 
-	gen := New(fleet, "/repo")
+	gen := New(fleet, "/repo", nil)
 	data, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Generate() error: %v", err)
@@ -167,7 +167,7 @@ func TestGenerate_WithBuildContext(t *testing.T) {
 		},
 	}
 
-	gen := New(fleet, "/repo")
+	gen := New(fleet, "/repo", nil)
 	data, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Generate() error: %v", err)
@@ -207,7 +207,7 @@ func TestGenerate_AgentDependsOnGateway(t *testing.T) {
 		},
 	}
 
-	gen := New(fleet, "/repo")
+	gen := New(fleet, "/repo", nil)
 	data, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Generate() error: %v", err)
