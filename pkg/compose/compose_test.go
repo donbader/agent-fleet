@@ -1,0 +1,222 @@
+package compose
+
+import (
+	"testing"
+
+	"github.com/donbader/agent-fleet/pkg/config"
+	"gopkg.in/yaml.v3"
+)
+
+func TestGenerate_SimpleFleet(t *testing.T) {
+	fleet := &config.ResolvedFleet{
+		Fleet: config.FleetConfig{
+			Fleet:  config.FleetMeta{Name: "myfleet"},
+			Agents: []string{"coder"},
+			EgressPresets: map[string]config.EgressPreset{
+				"main": {{Host: []string{"*"}}},
+			},
+		},
+		Agents: map[string]*config.AgentConfig{
+			"coder": {
+				Egress: []string{"main"},
+				Runtime: config.ProviderRef{
+					Provider: "github.com/donbader/agent-fleet/runtimes/codex",
+				},
+			},
+		},
+	}
+
+	gen := New(fleet)
+	data, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+
+	// Parse back to verify structure
+	var compose ComposeFile
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		t.Fatalf("unmarshal generated compose: %v", err)
+	}
+
+	// Should have 2 services: gateway + coder
+	if len(compose.Services) != 2 {
+		t.Errorf("services count = %d, want 2", len(compose.Services))
+	}
+
+	// Gateway service
+	gw := compose.Services["myfleet-gateway"]
+	if gw == nil {
+		t.Fatal("gateway service not found")
+	}
+	if gw.Image != "ghcr.io/donbader/agent-fleet/gateway:latest" {
+		t.Errorf("gateway image = %q", gw.Image)
+	}
+
+	// Agent service
+	agent := compose.Services["coder"]
+	if agent == nil {
+		t.Fatal("coder service not found")
+	}
+	if agent.Image != "ghcr.io/donbader/agent-fleet/codex:latest" {
+		t.Errorf("coder image = %q", agent.Image)
+	}
+	if len(agent.CapAdd) == 0 || agent.CapAdd[0] != "NET_ADMIN" {
+		t.Errorf("coder cap_add = %v, want [NET_ADMIN]", agent.CapAdd)
+	}
+
+	// Networks
+	if len(compose.Networks) != 2 {
+		t.Errorf("networks count = %d, want 2", len(compose.Networks))
+	}
+	internal := compose.Networks["myfleet-internal"]
+	if internal == nil || !internal.Internal {
+		t.Error("internal network missing or not internal")
+	}
+	external := compose.Networks["myfleet-external"]
+	if external == nil || external.Internal {
+		t.Error("external network missing or is internal")
+	}
+}
+
+func TestGenerate_MultiAgent(t *testing.T) {
+	fleet := &config.ResolvedFleet{
+		Fleet: config.FleetConfig{
+			Fleet:  config.FleetMeta{Name: "team"},
+			Agents: []string{"coder", "reviewer"},
+			EgressPresets: map[string]config.EgressPreset{
+				"main": {{Host: []string{"*"}}},
+			},
+		},
+		Agents: map[string]*config.AgentConfig{
+			"coder": {
+				Egress:  []string{"main"},
+				Runtime: config.ProviderRef{Provider: "github.com/donbader/agent-fleet/runtimes/codex"},
+				Env:     map[string]string{"EDITOR": "vim"},
+			},
+			"reviewer": {
+				Egress:  []string{"main"},
+				Runtime: config.ProviderRef{Provider: "github.com/donbader/agent-fleet/runtimes/claude-code"},
+			},
+		},
+	}
+
+	gen := New(fleet)
+	data, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+
+	var compose ComposeFile
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// 3 services: gateway + 2 agents
+	if len(compose.Services) != 3 {
+		t.Errorf("services count = %d, want 3", len(compose.Services))
+	}
+
+	// Coder has custom env
+	coder := compose.Services["coder"]
+	if coder == nil {
+		t.Fatal("coder service not found")
+	}
+	if coder.Environment["EDITOR"] != "vim" {
+		t.Errorf("coder EDITOR = %q, want vim", coder.Environment["EDITOR"])
+	}
+
+	// Reviewer uses claude-code image
+	reviewer := compose.Services["reviewer"]
+	if reviewer == nil {
+		t.Fatal("reviewer service not found")
+	}
+	if reviewer.Image != "ghcr.io/donbader/agent-fleet/claude-code:latest" {
+		t.Errorf("reviewer image = %q", reviewer.Image)
+	}
+}
+
+func TestGenerate_WithBuildContext(t *testing.T) {
+	fleet := &config.ResolvedFleet{
+		Fleet: config.FleetConfig{
+			Fleet:  config.FleetMeta{Name: "dev"},
+			Agents: []string{"coder"},
+			EgressPresets: map[string]config.EgressPreset{
+				"main": {{Host: []string{"*"}}},
+			},
+		},
+		Agents: map[string]*config.AgentConfig{
+			"coder": {
+				Egress: []string{"main"},
+				Runtime: config.ProviderRef{
+					Provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge",
+					Options: map[string]any{
+						"user_base_image_stage": "./Dockerfile",
+						"agent_provider":        "github.com/donbader/agent-fleet/runtimes/codex",
+					},
+				},
+			},
+		},
+	}
+
+	gen := New(fleet)
+	data, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+
+	var compose ComposeFile
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	coder := compose.Services["coder"]
+	if coder == nil {
+		t.Fatal("coder service not found")
+	}
+	if coder.Build == nil {
+		t.Fatal("coder should have build config")
+	}
+	if coder.Build.Context != "./agents/coder" {
+		t.Errorf("build context = %q, want ./agents/coder", coder.Build.Context)
+	}
+	if coder.Image != "" {
+		t.Errorf("image should be empty when build is set, got %q", coder.Image)
+	}
+}
+
+func TestGenerate_AgentDependsOnGateway(t *testing.T) {
+	fleet := &config.ResolvedFleet{
+		Fleet: config.FleetConfig{
+			Fleet:  config.FleetMeta{Name: "test"},
+			Agents: []string{"a"},
+			EgressPresets: map[string]config.EgressPreset{
+				"main": {{Host: []string{"*"}}},
+			},
+		},
+		Agents: map[string]*config.AgentConfig{
+			"a": {
+				Egress:  []string{"main"},
+				Runtime: config.ProviderRef{Provider: "github.com/donbader/agent-fleet/runtimes/codex"},
+			},
+		},
+	}
+
+	gen := New(fleet)
+	data, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+
+	var compose ComposeFile
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	agent := compose.Services["a"]
+	if agent == nil {
+		t.Fatal("agent 'a' not found")
+	}
+	if len(agent.DependsOn) != 1 || agent.DependsOn[0] != "test-gateway" {
+		t.Errorf("depends_on = %v, want [test-gateway]", agent.DependsOn)
+	}
+}

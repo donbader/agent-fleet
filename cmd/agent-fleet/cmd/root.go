@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/donbader/agent-fleet/pkg/config"
 	"github.com/spf13/cobra"
 )
 
@@ -90,22 +91,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
-	cfg, err := loadAndValidate()
+	resolved, err := resolveFleet()
 	if err != nil {
 		return err
 	}
-	fmt.Printf("✓ Fleet %q is valid (%d agents)\n", cfg.Fleet.Name, len(cfg.Agents))
+	fmt.Printf("✓ Fleet %q is valid (%d agents)\n", resolved.Fleet.Fleet.Name, len(resolved.Agents))
+	for name, agent := range resolved.Agents {
+		fmt.Printf("  - %s (runtime: %s, egress: %v)\n", name, agent.Runtime.Provider, agent.Egress)
+	}
 	return nil
 }
 
-func loadAndValidate() (*fleetValidationResult, error) {
-	// TODO: wire up real config loading
-	return nil, fmt.Errorf("not implemented yet")
-}
-
-type fleetValidationResult struct {
-	Fleet struct {
-		Name string
-	}
-	Agents []string
+func resolveFleet() (*config.ResolvedFleet, error) {
+	return config.Resolve(fleetFile)
 }
