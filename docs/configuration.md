@@ -69,25 +69,21 @@ runtime:
         options: {}                             # Channel-specific options
 ```
 
-### Image Customization (3-stage build)
+### Image Customization (template injection)
 
-When `user_base_image_stage` is set, agent-fleet generates a 3-stage Docker build:
+When `user_base_image_stage` is set, the provider reads your partial Dockerfile and injects it into the runtime's build. Your Dockerfile is a template — not a standalone image:
 
 ```dockerfile
-# Stage 1: Provider base (cached independently)
-FROM ghcr.io/donbader/agent-fleet/codex:latest AS agent-provider-base
+# agents/coder/Dockerfile (partial template)
+# Magic variables: ${AGENT_HOME}, ${AGENT_USER}
 
-# Stage 2: User customization (from user_base_image_stage)
-FROM ubuntu:24.04 AS user-base
-RUN apt-get install -y ripgrep
-COPY home/ /home/agent/
-
-# Stage 3: Final — user base + provider binaries
-FROM user-base AS final
-COPY --from=agent-provider-base /usr/local/bin/codex /usr/local/bin/
-COPY --from=agent-provider-base /usr/local/bin/bridge /usr/local/bin/
-ENTRYPOINT ["bridge"]
+RUN apt-get update && apt-get install -y ripgrep fd-find jq
+COPY home-override/.gitconfig ${AGENT_HOME}/.gitconfig
 ```
+
+The provider substitutes magic variables and injects your content between its base setup and finalize steps. Build context is set to your agent directory, so `COPY` paths are relative to `agents/<name>/`.
+
+See `docs/user-base.md` for full details.
 
 Both stages cache independently — user dep changes don't rebuild provider, and vice versa.
 

@@ -22,19 +22,7 @@ my-fleet/                    ← your repo
 
 By default, `/home/agent` is a Docker named volume (persists across container restarts). On first run, Docker populates the volume from the image contents.
 
-To pre-configure files in the home directory, use your custom Dockerfile (`user_base_image_stage`):
-
-```dockerfile
-# agents/coder/Dockerfile
-FROM node:22-slim
-
-RUN apt-get update && apt-get install -y ripgrep fd-find jq && rm -rf /var/lib/apt/lists/*
-
-# Pre-configure home directory
-COPY home-override/.gitconfig /home/agent/.gitconfig
-```
-
-Docker populates the named volume from the image on first run, so your config files will be there.
+To pre-configure files in the home directory, use a custom Dockerfile template (`user_base_image_stage`) — see the "Custom Base Image" section below.
 
 **WORKDIR:** `/home/agent/workspace`
 
