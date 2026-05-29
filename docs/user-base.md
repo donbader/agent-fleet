@@ -9,10 +9,8 @@ my-fleet/                    ← your repo
   agents/
     coder/
       agent.yaml
-      home/                  ← home-override (read-only config)
+      home-override/           ← read-only config overlays
         .gitconfig
-        .ssh/
-          config
       Dockerfile             ← custom base image (optional)
     reviewer/
       agent.yaml
@@ -22,28 +20,21 @@ my-fleet/                    ← your repo
 
 ### Default: Named Volume + home-override (Strategy 1)
 
-By default, `/home/agent` is a Docker named volume (persists across container restarts). You can overlay read-only config files on top using `agents/<name>/home/`:
+By default, `/home/agent` is a Docker named volume (persists across container restarts). On first run, Docker populates the volume from the image contents.
 
+To pre-configure files in the home directory, use your custom Dockerfile (`user_base_image_stage`):
+
+```dockerfile
+# agents/coder/Dockerfile
+FROM node:22-slim
+
+RUN apt-get update && apt-get install -y ripgrep fd-find jq && rm -rf /var/lib/apt/lists/*
+
+# Pre-configure home directory
+COPY home-override/.gitconfig /home/agent/.gitconfig
 ```
-agents/coder/home/
-  .gitconfig        → mounted at /home/agent/.gitconfig:ro
-  .ssh/config       → mounted at /home/agent/.ssh/config:ro
-```
 
-The agent can write anywhere in `/home/agent` (it's a writable volume), but the files from `home/` are always read-only — they stay in sync with your repo.
-
-**Docker Compose equivalent:**
-```yaml
-services:
-  coder:
-    volumes:
-      - coder-home:/home/agent                              # persistent volume
-      - ./agents/coder/home/.gitconfig:/home/agent/.gitconfig:ro
-      - ./agents/coder/home/.ssh:/home/agent/.ssh:ro
-
-volumes:
-  coder-home:
-```
+Docker populates the named volume from the image on first run, so your config files will be there.
 
 **WORKDIR:** `/home/agent/workspace`
 
@@ -59,14 +50,14 @@ runtime:
     home_mount: bind    # use bind mount instead of named volume
 ```
 
-This mounts `agents/<name>/home/` directly as `/home/agent`:
+This mounts `agents/<name>/home-override/` directly as `/home/agent`:
 
 ```yaml
 # Generated compose:
 services:
   coder:
     volumes:
-      - ./agents/coder/home:/home/agent
+      - ./agents/coder/home-override:/home/agent
 ```
 
 **WORKDIR:** `/home/agent`
@@ -122,13 +113,11 @@ my-team-agents/              ← your repo (not agent-fleet)
     ├── coder/
     │   ├── agent.yaml
     │   ├── Dockerfile       ← extra tools (ripgrep, etc.)
-    │   └── home/
-    │       ├── .gitconfig   ← read-only override
-    │       └── .ssh/
-    │           └── config   ← SSH host aliases
+    │   └── home-override/
+    │       └── .gitconfig   ← read-only override
     └── reviewer/
         ├── agent.yaml
-        └── home/
+        └── home-override/
             └── .gitconfig
 ```
 
