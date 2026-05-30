@@ -3,25 +3,28 @@
 ## Build Flow
 
 ```
-agent-sandbox up
+agent-sandbox generate
   │
   ├── Detect mode: agent.yaml (single) or fleet.yaml (multi)
-  ├── Auto-enable runtime plugin from runtime: field
-  ├── Merge shared plugins (if fleet mode)
-  ├── For each plugin: Contribute() → merge all Contributions
+  ├── Load RuntimePlugin from runtime: field
+  ├── Load FeaturePlugins from features: map
+  ├── Merge shared features (if fleet mode)
+  ├── Call Contribute() on runtime + each feature
   │
-  ├── Generate .build/:
-  │     ├── gateway-src/        (go:embed → gateway Go source)
-  │     ├── bridge/             (go:embed → bridge TypeScript)
-  │     ├── bridge-plugins/     (from plugin embed.FS)
-  │     ├── home-override/      (from user's home/ dir)
-  │     ├── hooks/              (from plugins)
-  │     ├── Dockerfile          (multi-stage: gateway compile + runtime)
-  │     ├── gateway-config.yaml (merged egress rules)
-  │     └── bridge-config.json  (channels + runtime to spawn)
+  └── Generate .build/:
+        ├── gateway-src/        (go:embed → gateway Go source)
+        ├── bridge/             (go:embed → bridge TypeScript)
+        ├── bridge-plugins/     (from feature embed.FS)
+        ├── home-override/      (from user's home/ dir)
+        ├── hooks/              (from features)
+        ├── Dockerfile          (multi-stage: gateway compile + runtime)
+        ├── gateway-config.yaml (merged egress rules)
+        ├── bridge-config.json  (channels + runtime cmd)
+        └── docker-compose.yml  (services, volumes, networks)
+
+agent-sandbox compose up --build -d
   │
-  ├── Generate docker-compose.yml + .env.example
-  └── docker compose up -d --build
+  └── docker compose -f .build/docker-compose.yml up --build -d
 ```
 
 ## Generated Dockerfile (Multi-Stage)

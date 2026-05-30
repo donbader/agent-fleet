@@ -4,20 +4,41 @@
 
 ```bash
 agent-sandbox init [--runtime codex]    # interactive scaffold
-agent-sandbox up [agent-name]           # build + start
-agent-sandbox down [agent-name]         # stop
-agent-sandbox exec [agent-name] [cmd]   # shell (default: bash)
-agent-sandbox logs [agent-name]         # stream logs
-agent-sandbox status                    # health dashboard
+agent-sandbox generate                  # read config → write .build/ artifacts
+agent-sandbox validate                  # check config + suggest fixes
 agent-sandbox plugins                   # list available
 agent-sandbox plugins info <name>       # plugin details
-agent-sandbox validate                  # check config + suggest fixes
 agent-sandbox upgrade                   # self-update
-agent-sandbox up --dry-run              # preview without building
-agent-sandbox up --debug                # verbose gateway + bridge logs
-agent-sandbox generate                  # write .build/ without starting
-agent-sandbox rebuild                   # rebuild image, keep container
-agent-sandbox restart                   # restart container, keep image
+agent-sandbox compose ...               # docker compose passthrough
+```
+
+### Compose Passthrough
+
+Auto-injects `-f .build/docker-compose.yml` and `--project-name`. All compose commands work:
+
+```bash
+agent-sandbox compose up --build        # build + start
+agent-sandbox compose up --build -d     # detached
+agent-sandbox compose down              # stop + remove
+agent-sandbox compose logs -f coder     # stream logs
+agent-sandbox compose exec coder bash   # shell into agent
+agent-sandbox compose ps                # status
+agent-sandbox compose restart coder     # restart container
+agent-sandbox compose build coder       # rebuild image only
+```
+
+### Typical Workflow
+
+```bash
+agent-sandbox generate                  # generate artifacts
+agent-sandbox compose up --build -d     # build + start detached
+agent-sandbox compose logs -f           # watch logs
+```
+
+After config changes:
+```bash
+agent-sandbox generate                  # regenerate
+agent-sandbox compose up --build -d     # rebuild + restart
 ```
 
 ## UX Design
