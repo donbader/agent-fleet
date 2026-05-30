@@ -158,6 +158,6 @@ agent-fleet upgrade
 ## Next Steps
 
 - [Configuration Reference](configuration.md) — full fleet.yaml and agent.yaml options
-- [Home Directory Strategies](user-base.md) — persist and customize agent home
+- [Home Directory Strategies](customization.md) — persist and customize agent home
 - [Architecture](architecture.md) — how the proxy, gateway, and bridge work
 - [Security Model](security-model.md) — egress rules, MITM, credential injection

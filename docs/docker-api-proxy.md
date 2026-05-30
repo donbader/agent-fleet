@@ -1,4 +1,6 @@
-# Docker API Proxy
+# Docker API Proxy [PLANNED]
+
+> ⚠️ This feature is not yet implemented. This document describes the planned design.
 
 ## Overview
 
