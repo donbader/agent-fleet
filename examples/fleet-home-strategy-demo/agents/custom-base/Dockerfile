@@ -12,4 +12,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Stage home-override files (applied on every start by init script)
-COPY --chown=${AGENT_USER}:${AGENT_USER} home-override/ /home/agent-override/
+COPY --chown=${AGENT_USER}:${AGENT_USER} home-override/ /opt/home-override/
