@@ -6,7 +6,7 @@ Demonstrates three approaches to managing the agent's home directory. Each agent
 
 ### named-volume (simplest)
 
-The runtime provider outputs a named volume for `/home/agent`. Docker populates it from the image on first run. No extra configuration needed.
+The runtime provider outputs a named volume for `/home/agent`. Docker populates it from the image on first run. Both the **codex** and **channels-bridge** providers do this by default — no home directory configuration needed.
 
 ```yaml
 # agents/named-volume/agent.yaml
