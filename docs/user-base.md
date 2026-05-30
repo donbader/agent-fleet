@@ -20,9 +20,9 @@ my-fleet/                    ← your repo
 
 The agent's home directory (`/home/agent`) can be set up in different ways depending on your needs.
 
-### Strategy 1.1: Named Volume (default)
+### Strategy 1.1: Named Volume
 
-The provider's render.sh outputs a named volume for the home directory. Docker populates it from the image on first run. No configuration needed.
+The provider's render.sh outputs a named volume for the home directory. Docker populates it from the image on first run. No extra configuration needed — this is what the codex and channels-bridge runtimes do out of the box.
 
 ```yaml
 # agent.yaml — nothing special, just pick a runtime
