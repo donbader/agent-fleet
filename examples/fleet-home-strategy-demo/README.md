@@ -46,9 +46,17 @@ volumes:
 - Path is relative to fleet root (where docker-compose.yml lives)
 - Agent writes are immediately visible on host and vice versa
 
-**Best for:** Version-controlling the home directory with git, or inspecting agent state from the host.
+**Best for:** Debugging (inspecting agent state from host), or sharing files between host and container in real-time.
 
-**Tradeoffs:**
+**Not recommended for git version control of configs** — the agent writes runtime state (caches, temp files, auth tokens) into the home directory. You'd need extensive `.gitignore` and it's hard to separate intentional configs from agent-generated artifacts. Use [custom-base](#custom-base-home-overriding) instead.
+
+**Security considerations:**
+- ⚠️ Creates a bidirectional file channel that partially bypasses the sandbox
+- Agent can write files to the host filesystem (within the mounted path)
+- If mount path is too broad, agent could access sensitive host files
+- Conflicts with agent-fleet's sandbox isolation philosophy
+
+**Other tradeoffs:**
 - Permission issues on Linux (container UID ≠ host UID)
 - Need `.gitignore` for transient files (.cache, node_modules, etc.)
 
@@ -84,7 +92,7 @@ COPY --chown=${AGENT_USER}:${AGENT_USER} home-override/ ${AGENT_HOME}/
 4. Build context is `agents/custom-base/` (so COPY paths work)
 5. Named volume is populated from image on first run
 
-**Best for:** Tracking fixed configs (.gitconfig, .bashrc, tool settings) in git while keeping a persistent writable home.
+**Best for:** Git version control of agent configs. Track `.gitconfig`, `.bashrc`, tool settings in your repo. Agent files a PR → merge → rebuild → configs persist. This is the recommended approach for persistent, reviewable customization.
 
 **To reset home to tracked state:** delete the volume and rebuild:
 ```bash
