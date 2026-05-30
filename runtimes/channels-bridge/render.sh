@@ -24,6 +24,7 @@ USER_BASE=$(agent-fleet tools ctx .options.user_base --default "")
 
 # Persist auth token (default: true)
 PERSIST_AUTH=$(agent-fleet tools ctx .options.persist_auth_token --default "true")
+INIT_SCRIPTS=$(agent-fleet tools ctx .options.init_scripts --default "")
 
 # Extract telegram channel config using array indexing
 ALLOWED_USERS=$(agent-fleet tools ctx .options.channels.0.options.allowed_users --default "[]")
@@ -62,6 +63,13 @@ volumes:
   - ${NAME}-codex-auth:/home/agent/.codex"
 fi
 
+# Build INIT_SCRIPTS env var (conditional)
+INIT_SCRIPTS_ENV=""
+if [ -n "$INIT_SCRIPTS" ]; then
+    INIT_SCRIPTS_ENV="
+  INIT_SCRIPTS: \"${INIT_SCRIPTS}\""
+fi
+
 cat <<EOF
 build:
   context: .
@@ -74,6 +82,6 @@ environment:
   GATEWAY_PORT: "${GATEWAY_PORT}"
   AGENT_CMD: "${AGENT_CMD}"
   TELEGRAM_BOT_TOKEN: "000000000:DUMMY"
-  TELEGRAM_ALLOWED_USERS: "${ALLOWED_USERS}"
+  TELEGRAM_ALLOWED_USERS: "${ALLOWED_USERS}"${INIT_SCRIPTS_ENV}
 restart: unless-stopped
 EOF

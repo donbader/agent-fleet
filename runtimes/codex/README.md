@@ -59,6 +59,7 @@ Alternatively, use the Docker extension's right-click → **Attach Visual Studio
 |--------|------|---------|-------------|
 | `auth_port` | number | `1455` | Host port for codex auth device flow |
 | `persist_auth_token` | boolean | `true` | Persist auth token across container restarts |
+| `init_scripts` | string[] | `[]` | Scripts to run on every container start (comma-separated in env) |
 | `user_base` | string | `""` | Path to partial Dockerfile template (relative to agent dir) |
 
 ## user_base

@@ -8,6 +8,7 @@ Connects messaging channels (Telegram) to an agent process via ACP protocol.
 |--------|------|---------|-------------|
 | `agent_provider` | string | `"codex"` | Which agent CLI to spawn |
 | `persist_auth_token` | boolean | `true` | Persist agent auth token across restarts |
+| `init_scripts` | string[] | `[]` | Scripts to run on every container start |
 | `user_base` | string | `""` | Path to partial Dockerfile template (relative to agent dir) |
 | `channels` | array | `[]` | Channel configurations |
 

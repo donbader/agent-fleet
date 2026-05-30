@@ -16,6 +16,7 @@ GATEWAY_HOST=$(agent-fleet tools ctx .gateway_host)
 GATEWAY_PORT=$(agent-fleet tools ctx .gateway_port)
 AUTH_PORT=$(agent-fleet tools ctx .options.auth_port --default 1455)
 PERSIST_AUTH=$(agent-fleet tools ctx .options.persist_auth_token --default "true")
+INIT_SCRIPTS=$(agent-fleet tools ctx .options.init_scripts --default "")
 
 # Build volumes list (no home volume — ephemeral by default)
 VOLUMES=""
@@ -23,6 +24,13 @@ if [ "$PERSIST_AUTH" = "true" ]; then
     VOLUMES="
 volumes:
   - ${NAME}-codex-auth:/home/agent/.codex"
+fi
+
+# Build environment section
+INIT_SCRIPTS_ENV=""
+if [ -n "$INIT_SCRIPTS" ]; then
+    INIT_SCRIPTS_ENV="
+  INIT_SCRIPTS: \"${INIT_SCRIPTS}\""
 fi
 
 cat <<EOF
@@ -39,6 +47,6 @@ environment:
   AGENT_NAME: "${NAME}"
   GATEWAY_HOST: "${GATEWAY_HOST}"
   GATEWAY_PORT: "${GATEWAY_PORT}"
-  AUTH_PORT: "${AUTH_PORT}"
+  AUTH_PORT: "${AUTH_PORT}"${INIT_SCRIPTS_ENV}
 restart: unless-stopped
 EOF

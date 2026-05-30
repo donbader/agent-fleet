@@ -70,6 +70,22 @@ The provider substitutes magic variables and injects your content into the runti
 | `${AGENT_HOME}` | `/home/agent` |
 | `${AGENT_USER}` | `agent` |
 
+### init_scripts
+
+Scripts to run on every container start, before the agent process. Useful for overriding home directory files from a staging location.
+
+```yaml
+# agent.yaml
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+  options:
+    user_base: "./Dockerfile"
+    init_scripts:
+      - "/scripts/override-home.sh"
+```
+
+Scripts must be COPYed into the image via `user_base` and made executable. They run as root before the agent user takes over.
+
 ### env
 
 Environment variables passed to the agent container.
