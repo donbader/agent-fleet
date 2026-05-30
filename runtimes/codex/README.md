@@ -2,6 +2,47 @@
 
 Runs OpenAI Codex CLI agent inside a sandboxed container with transparent egress proxy.
 
+## Daily Workflow
+
+Once the fleet is up (`agent-fleet up`), working with the codex agent is the same as running codex locally — just sandboxed.
+
+### First-time login
+
+Codex requires a one-time device flow login. Exec into the container and run codex:
+
+```bash
+docker exec -it myfleet-coder-1 codex
+```
+
+The codex TUI will prompt you to visit a URL and enter a code. After login, the auth token is stored in `/home/agent/.codex` (persisted via a named volume — survives container restarts and even home directory resets).
+
+### Daily use
+
+After login, just exec in and use codex normally:
+
+```bash
+docker exec -it myfleet-coder-1 codex "fix the failing test in src/utils.ts"
+```
+
+Or start an interactive session:
+
+```bash
+docker exec -it myfleet-coder-1 codex
+```
+
+It's the same codex CLI experience, but all network traffic goes through the transparent proxy (egress rules enforced, credentials injected automatically).
+
+### Exploring files with VSCode
+
+Attach VSCode to the running container for full IDE access:
+
+1. Install the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension
+2. Open Command Palette → **Dev Containers: Attach to Running Container...**
+3. Select the agent container (e.g. `myfleet-coder-1`)
+4. VSCode opens a new window inside the container — browse files, edit, use terminal
+
+Alternatively, use the Docker extension's right-click → **Attach Visual Studio Code** on the container.
+
 ## Options
 
 | Option | Type | Default | Description |
