@@ -10,7 +10,7 @@ An opinionated agent sandbox orchestrator that deploys AI coding agents inside s
 
 ## Requirements
 
-1. User can choose supported runtime agent provider (codex, claude-code, pi, aider)
+1. User can choose supported runtime agent provider (codex, claude-code, pi)
 2. Agent sandbox enforced (transparent proxy, iptables — cannot be bypassed)
 3. Minimize user configuration efforts
 4. Allow user to customize packages and home directory
@@ -47,7 +47,7 @@ An opinionated agent sandbox orchestrator that deploys AI coding agents inside s
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  Agent Runtime (child of bridge)                      │    │
-│  │  - codex | claude-code | pi | aider                  │    │
+│  │  - codex | claude-code | pi                          │    │
 │  │  - Unaware of proxy, bridge, or channels             │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
@@ -180,7 +180,7 @@ plugins/<name>/
 ```go
 // cmd/agent-sandbox/plugins.go
 var Registry = []sdk.Plugin{
-    codex.New(), claudecode.New(), pi.New(), aider.New(),  // runtimes
+    codex.New(), claudecode.New(), pi.New(),               // runtimes
     github.New(), mcpoauth.New(), staticheader.New(),     // credentials
     docker.New(), telegram.New(), slack.New(),              // features/channels
 }
@@ -205,7 +205,6 @@ runtime: codex    # auto-enables codex plugin → sets BaseImage + installs @ope
 | `codex` | node:22-slim | git, curl, @openai/codex |
 | `claude-code` | node:22-slim | git, curl, @anthropic-ai/claude-code |
 | `pi` | node:22-slim | git, curl, pi-coding-agent |
-| `aider` | python:3.12-slim | git, aider-chat |
 
 For unsupported runtimes:
 ```yaml
