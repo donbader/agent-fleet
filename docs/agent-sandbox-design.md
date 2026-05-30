@@ -891,6 +891,328 @@ The generated Dockerfile creates both users: `agent` (unprivileged, runs bridge 
 
 ---
 
+## UX & DX Improvements
+
+### First-Run Experience
+
+```bash
+$ agent-sandbox init
+
+? Runtime: (use arrows)
+  ❯ codex (OpenAI Codex CLI)
+    claude-code (Anthropic Claude Code)
+    pi (Pi Coding Agent)
+    aider (Aider - AI pair programming)
+
+? Enable GitHub access? (Y/n) Y
+? GitHub PAT: (paste or press Enter to use gh CLI)
+  ✓ Detected gh auth token
+
+? Enable Docker for agent? (y/N) n
+
+? Messaging channel: (use arrows)
+  ❯ telegram
+    slack
+    none (exec only)
+
+✓ Created agent.yaml
+✓ Created .env (with detected credentials)
+✓ Created home/ directory
+
+Next: agent-sandbox up
+```
+
+Interactive init with sensible detection:
+- Auto-detect `gh auth token` for GitHub PAT
+- Auto-detect existing `.env` files
+- Suggest plugins based on runtime choice (codex → openai plugin auto-suggested)
+
+### Live Status During `up`
+
+```bash
+$ agent-sandbox up
+
+⠋ Building agent image...
+  ├─ [1/8] Base image: node:22-slim
+  ├─ [2/8] System packages: git, curl, iptables, ripgrep
+  ├─ [3/8] Runtime: @openai/codex
+  ├─ [4/8] Bridge runtime
+  ├─ [5/8] Channel: telegram
+  ├─ [6/8] Home override (3 files)
+  ├─ [7/8] Gateway binary
+  └─ [8/8] Entrypoint
+
+✓ Image built (42s)
+✓ Container started
+✓ Gateway healthy (egress: github, openai, telegram)
+✓ Bridge connected
+✓ Telegram bot @coder_bot online
+
+  Agent: coder (codex)
+  Exec:  agent-sandbox exec
+  Logs:  agent-sandbox logs
+  Stop:  agent-sandbox down
+```
+
+### Health Dashboard
+
+```bash
+$ agent-sandbox status
+
+┌─────────────────────────────────────────────────────┐
+│ coder (codex)                          RUNNING  │
+├─────────────────────────────────────────────────────┤
+│ Uptime:     2h 34m                              │
+│ Gateway:    ✓ healthy (247 requests proxied)    │
+│ Bridge:     ✓ connected                         │
+│ Telegram:   ✓ @coder_bot (last msg: 5m ago)     │
+│ Memory:     312MB / 4GB                         │
+│ Home:       persistent (1.2GB used)             │
+└─────────────────────────────────────────────────────┘
+```
+
+### Helpful Error Messages
+
+```bash
+# Bad: "connection refused"
+# Good:
+$ agent-sandbox up
+
+✗ Plugin 'github' failed: token is invalid or expired
+
+  Your GitHub PAT might have expired. To fix:
+    1. Generate a new token: https://github.com/settings/tokens
+    2. Update .env: GITHUB_PAT=ghp_your_new_token
+    3. Run: agent-sandbox up
+
+  Or use gh CLI: gh auth refresh && agent-sandbox up
+```
+
+```bash
+# Bad: "port already in use"
+# Good:
+$ agent-sandbox up
+
+✗ Port 1455 is already in use (by process: agent-sandbox [pid 12345])
+
+  Another agent-sandbox instance is running.
+  Run: agent-sandbox down   (stop existing)
+  Or:  agent-sandbox up --port 1456   (use different port)
+```
+
+### Plugin Discovery
+
+```bash
+$ agent-sandbox plugins
+
+Available plugins:
+
+  Credentials:
+    github        GitHub PAT injection (api.github.com)
+    openai        OpenAI API key injection (api.openai.com)
+    anthropic     Anthropic API key injection (api.anthropic.com)
+    notion        Notion OAuth (api.notion.com) [requires auth flow]
+    custom-api    Custom API key for any host
+
+  Channels:
+    telegram      Telegram bot (long-poll)
+    slack         Slack bot (socket mode)
+
+  Features:
+    docker        Docker-in-Docker for agent development
+
+  Runtimes:
+    codex         OpenAI Codex CLI
+    claude-code   Anthropic Claude Code
+    pi            Pi Coding Agent
+    aider         Aider AI pair programming
+
+$ agent-sandbox plugins info github
+
+  github — GitHub PAT injection
+
+  Injects Authorization header for all requests to github.com.
+  Agent sees a dummy GH_TOKEN; real PAT never enters the container.
+
+  Config:
+    token: (required) GitHub Personal Access Token
+             Supports: ${GITHUB_PAT} env var reference
+             Auto-detect: gh auth token
+
+  Egress rules added:
+    github.com, *.github.com, *.githubusercontent.com → MITM + inject
+
+  Example:
+    plugins:
+      github:
+        token: "${GITHUB_PAT}"
+```
+
+### Dry Run / Preview
+
+```bash
+$ agent-sandbox up --dry-run
+
+Would generate:
+  .build/Dockerfile          (multi-stage, 2 stages)
+  .build/docker-compose.yml  (1 service + 1 sidecar)
+  .build/gateway-config.yaml (3 egress rules)
+
+Egress rules:
+  1. github.com, *.github.com → MITM (github PAT)
+  2. api.openai.com → MITM (openai API key)
+  3. api.telegram.org → MITM (telegram URL rewrite)
+  4. * → passthrough (allow all)
+
+Estimated build time: ~60s (first build), ~5s (cached)
+```
+
+### Config Validation with Suggestions
+
+```bash
+$ agent-sandbox validate
+
+⚠ Warning: runtime 'codex' typically needs 'openai' plugin for API access.
+  Add to agent.yaml:
+    plugins:
+      openai:
+        api_key: "${OPENAI_API_KEY}"
+
+✓ Config valid (1 warning)
+```
+
+### Developer Experience (Plugin Authors)
+
+#### Plugin Scaffold
+
+```bash
+$ agent-sandbox plugin new my-corp-api
+
+Created plugins/my-corp-api/:
+  go.mod
+  plugin.go       ← implement Contribute() and NewInjector()
+  plugin_test.go  ← test template
+  README.md
+
+Next steps:
+  1. Edit plugin.go — define config schema and contributions
+  2. Run: cd plugins/my-corp-api && go test ./...
+  3. Add to cmd/agent-sandbox/plugins.go registry
+  4. Rebuild: go build ./cmd/agent-sandbox
+```
+
+#### Plugin Testing
+
+```go
+// plugins/github/plugin_test.go
+func TestGithubContribute(t *testing.T) {
+    p := New()
+    contrib, err := p.Contribute(sdk.ContributeContext{
+        AgentName: "test",
+        Config:    map[string]any{"token": "ghp_test123"},
+    })
+    require.NoError(t, err)
+    assert.Len(t, contrib.EgressRules, 1)
+    assert.Equal(t, []string{"github.com", "*.github.com"}, contrib.EgressRules[0].Hosts)
+}
+
+func TestGithubInjector(t *testing.T) {
+    p := New()
+    injector, err := p.NewInjector(map[string]any{"token": "ghp_real"})
+    require.NoError(t, err)
+
+    req := httptest.NewRequest("GET", "https://api.github.com/repos", nil)
+    err = injector.InjectCredentials(req)
+    require.NoError(t, err)
+    assert.Equal(t, "token ghp_real", req.Header.Get("Authorization"))
+}
+```
+
+#### Integration Test Helper
+
+```go
+// sdk/testing/sandbox.go
+func NewTestSandbox(t *testing.T, plugins ...sdk.Plugin) *TestSandbox {
+    // Spins up a real container with gateway + bridge
+    // Returns handle for exec, HTTP requests, log inspection
+}
+
+// Usage:
+func TestFullFlow(t *testing.T) {
+    sb := sdktest.NewTestSandbox(t, github.New(), telegram.New())
+    defer sb.Cleanup()
+
+    // Verify egress works
+    resp := sb.HTTPGet("https://api.github.com/user")
+    assert.Equal(t, 200, resp.StatusCode)
+
+    // Verify credential injection
+    assert.Contains(t, sb.GatewayLogs(), "injected Authorization header")
+}
+```
+
+#### Local Dev Loop
+
+```bash
+# Fast iteration: rebuild only what changed
+$ agent-sandbox up --no-cache          # full rebuild
+$ agent-sandbox up                     # uses Docker layer cache (fast)
+$ agent-sandbox rebuild                # rebuild image without restart
+$ agent-sandbox restart                # restart container (keep image)
+
+# Debug mode: verbose gateway + bridge logs
+$ agent-sandbox up --debug
+
+# Inspect generated artifacts without building
+$ agent-sandbox generate               # write .build/ without docker compose up
+```
+
+### Progressive Disclosure
+
+Minimal config (works out of the box):
+```yaml
+name: coder
+runtime: codex
+```
+
+Add credentials when needed:
+```yaml
+name: coder
+runtime: codex
+plugins:
+  github:
+    token: "${GITHUB_PAT}"
+```
+
+Add channels when ready:
+```yaml
+name: coder
+runtime: codex
+plugins:
+  github:
+    token: "${GITHUB_PAT}"
+  telegram:
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    allowed_users: ["me"]
+```
+
+Full power when needed:
+```yaml
+name: coder
+runtime: codex
+plugins:
+  github: { token: "${GITHUB_PAT}" }
+  openai: { api_key: "${OPENAI_API_KEY}" }
+  docker: true
+  telegram: { bot_token: "${BOT_TOKEN}", allowed_users: ["me"] }
+packages: [ripgrep, fd-find]
+home:
+  persist: true
+  override: ./home/
+```
+
+---
+
 ## Open Questions
 
 1. **Plugin versioning** — How to handle breaking changes in plugin interface? SDK version pinning?
