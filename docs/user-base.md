@@ -9,7 +9,7 @@ my-fleet/                    ← your repo
   agents/
     coder/
       agent.yaml
-      Dockerfile             ← custom base image (optional, see Custom Base Template)
+      Dockerfile             ← custom base image (optional, see Home Overriding)
       home-override/         ← config files to bake into image (optional)
         .gitconfig
     reviewer/
@@ -68,9 +68,11 @@ Note: the path is relative to the compose file (fleet root), not relative to age
 - Permission issues on Linux (container UID vs host UID)
 - Need `.gitignore` for transient files (node_modules, .cache, etc.)
 
-### Custom Base Template
+### Home Overriding
 
-Combine a named volume with a custom Dockerfile template to pre-install tools and bake config files into the image. Docker populates the volume from the image on first run.
+Combine a named volume with a custom Dockerfile template to bake config files into the image. This lets you track fixed configs (like `.gitconfig`, `.bashrc`, tool settings) in git while still having a persistent writable home directory.
+
+Docker populates the named volume from the image on first run, so your tracked configs become the initial state.
 
 ```yaml
 # agent.yaml
@@ -90,7 +92,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-COPY home-override/.gitconfig ${AGENT_HOME}/.gitconfig
+COPY home-override/ ${AGENT_HOME}/
 ```
 
 **Behavior:**
@@ -98,7 +100,7 @@ COPY home-override/.gitconfig ${AGENT_HOME}/.gitconfig
 - Config files baked into image → populate volume on first run
 - Rebuild image + delete volume → fresh home with updated config
 
-## Custom Base Image (user_base_image_stage)
+## user_base_image_stage
 
 Your Dockerfile is a **template** — the provider reads it, substitutes magic variables, and injects it into the runtime's Dockerfile.
 
@@ -135,7 +137,7 @@ my-team-agents/              ← your repo (not agent-fleet)
 └── agents/
     ├── coder/
     │   ├── agent.yaml
-    │   ├── Dockerfile       ← extra tools (Custom Base Template)
+    │   ├── Dockerfile       ← extra tools (Home Overriding)
     │   └── home-override/
     │       └── .gitconfig
     └── reviewer/
