@@ -1,0 +1,5 @@
+[user]
+    name = Agent Coder
+    email = agent@example.com
+[init]
+    defaultBranch = main

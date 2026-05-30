@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../../schemas/agent.schema.json
+#
+# Strategy 1.1: Named volume (default)
+# - Provider outputs home volume in render.sh
+# - No user customization needed
+# - Simplest setup
+
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+
+egress:
+  - allow-all

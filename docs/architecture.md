@@ -86,9 +86,9 @@ Each provider implements credential injection or service exposure:
 | `egress-rules/api-key` | MITM + inject custom header |
 | `egress-rules/docker-api-proxy` | Expose Docker API endpoint with policy enforcement |
 
-### 5. Channels Bridge (`pkg/bridge/`)
+### 5. Channels Bridge (`runtimes/channels-bridge/`)
 
-The `channels-bridge` runtime provider:
+The `channels-bridge` runtime provider (TypeScript, grammy):
 - Spawns the agent runtime as a child process
 - Manages channel provider instances (Telegram, web-ui, etc.)
 - Routes messages between channels and agent (ACP protocol)

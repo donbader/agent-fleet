@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../schemas/agent.schema.json
+#
+# Strategy 1.2: Bind mount
+# - User's home directory is bind-mounted from host
+# - Great for version-controlling the home directory with git
+# - Agent writes are visible on host
+
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+
+egress:
+  - allow-all
+
+volumes:
+  - "./agents/bind-mount/home:/home/agent"

@@ -40,9 +40,8 @@ type Service struct {
 
 // BuildConfig represents the build section of a service.
 type BuildConfig struct {
-	Context            string            `yaml:"context"`
-	Dockerfile         string            `yaml:"dockerfile,omitempty"`
-	AdditionalContexts map[string]string `yaml:"additional_contexts,omitempty"`
+	Context    string `yaml:"context"`
+	Dockerfile string `yaml:"dockerfile,omitempty"`
 }
 
 // Network represents a Docker Compose network.
@@ -57,6 +56,7 @@ type VolumeConfig struct{}
 type RenderContext struct {
 	Name        string            `json:"name"`
 	FleetName   string            `json:"fleet_name"`
+	AgentDir    string            `json:"agent_dir"`
 	Options     map[string]any    `json:"options"`
 	Env         map[string]string `json:"env"`
 	GatewayHost string            `json:"gateway_host"`
@@ -198,6 +198,11 @@ func (g *Generator) agentService(name string, agent *config.AgentConfig) (*Servi
 	}
 
 	// Fleet-level concerns (always applied by CLI, not provider)
+	// Merge user-declared volumes from agent.yaml
+	if len(agent.Volumes) > 0 {
+		svc.Volumes = appendUnique(svc.Volumes, agent.Volumes)
+	}
+
 	// Merge user-declared ports from agent.yaml with provider-declared ports.
 	if len(agent.Ports) > 0 {
 		svc.Ports = appendUnique(svc.Ports, agent.Ports)
@@ -230,6 +235,7 @@ func (g *Generator) executeRenderScript(providerDir string, name string, agent *
 	ctx := RenderContext{
 		Name:        name,
 		FleetName:   g.fleet.Fleet.Fleet.Name,
+		AgentDir:    filepath.Join(g.repoRoot, "agents", name),
 		Options:     agent.Runtime.Options,
 		Env:         agent.Env,
 		GatewayHost: g.gatewayServiceName(),

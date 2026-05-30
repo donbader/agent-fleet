@@ -4,9 +4,9 @@
 # No external dependencies required.
 #
 # Supported options:
-#   agent_provider       - runtime provider for the agent process (default: codex)
-#   user_base_image_stage - path to user's Dockerfile for extra tools
-#   channels             - array of channel configs (provider + options)
+#   agent_provider  - runtime provider for the agent process (default: codex)
+#   user_base       - path to user's partial Dockerfile (template injection)
+#   channels        - array of channel configs (provider + options)
 
 set -e
 
@@ -18,8 +18,8 @@ GATEWAY_PORT=$(agent-fleet ctx .gateway_port)
 AGENT_PROVIDER=$(agent-fleet ctx .options.agent_provider --default "codex")
 AGENT_CMD=$(basename "$AGENT_PROVIDER")
 
-# User base image stage (custom Dockerfile for extra tools)
-USER_BASE=$(agent-fleet ctx .options.user_base_image_stage --default "")
+# User base template (optional)
+USER_BASE=$(agent-fleet ctx .options.user_base --default "")
 
 # Extract telegram channel config using array indexing
 ALLOWED_USERS=$(agent-fleet ctx .options.channels.0.options.allowed_users --default "[]")
@@ -27,30 +27,37 @@ if [ "$ALLOWED_USERS" != "[]" ] && [ -n "$ALLOWED_USERS" ]; then
     ALLOWED_USERS=$(echo "$ALLOWED_USERS" | tr -d '[]"' | tr ',' ',')
 fi
 
-# Build section — include additional_contexts for user base image
+# Generate Dockerfile with optional user_base injection
+DOCKERFILE="Dockerfile"
 if [ -n "$USER_BASE" ]; then
-    # user_base_image_stage points to a Dockerfile in the agent's directory
-    # Docker Compose additional_contexts lets our Dockerfile reference it
-    cat <<EOF
-build:
-  context: .
-  dockerfile: Dockerfile
-  additional_contexts:
-    user-base: ../../agents/${NAME}
-EOF
-else
-    cat <<EOF
-build:
-  context: .
-  dockerfile: Dockerfile
-  additional_contexts:
-    user-base: docker-image://node:22-slim
-EOF
+    AGENT_DIR=$(agent-fleet ctx .agent_dir)
+    USER_TEMPLATE="${AGENT_DIR}/${USER_BASE}"
+
+    # Process user template with magic variables
+    USER_CONTENT=$(agent-fleet template inject \
+        --source "$USER_TEMPLATE" \
+        --var "AGENT_HOME=/home/agent" \
+        --var "AGENT_USER=agent")
+
+    # Generate combined Dockerfile: runtime base + user content + finalize
+    GENERATED="/tmp/Dockerfile.${NAME}"
+    sed '/^# === USER_BASE ===/,$d' "$(dirname "$0")/Dockerfile" > "$GENERATED"
+    echo "# === User customization (from ${USER_BASE}) ===" >> "$GENERATED"
+    echo "$USER_CONTENT" >> "$GENERATED"
+    echo "" >> "$GENERATED"
+    sed -n '/^# === FINALIZE ===/,$p' "$(dirname "$0")/Dockerfile" >> "$GENERATED"
+
+    DOCKERFILE="$GENERATED"
 fi
 
 cat <<EOF
+build:
+  context: .
+  dockerfile: ${DOCKERFILE}
 cap_add:
   - NET_ADMIN
+volumes:
+  - ${NAME}-home:/home/agent
 environment:
   AGENT_NAME: "${NAME}"
   GATEWAY_HOST: "${GATEWAY_HOST}"

@@ -27,6 +27,7 @@ sysctls:
 ports:
   - "${AUTH_PORT}:${AUTH_PORT}"
 volumes:
+  - ${NAME}-home:/home/agent
   - ${NAME}-codex-auth:/home/agent/.codex
 environment:
   AGENT_NAME: "${NAME}"

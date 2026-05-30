@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../schemas/fleet.schema.json
+
+fleet:
+  name: home-strategy-demo
+
+agents:
+  - named-volume
+  - bind-mount
+  - custom-base
+
+egress-presets:
+  allow-all:
+    - host: ["*"]
