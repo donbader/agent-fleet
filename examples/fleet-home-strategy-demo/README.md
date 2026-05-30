@@ -28,7 +28,7 @@ egress:
 
 ### named-volume (persistent home)
 
-The runtime provider outputs a named volume for `/home/agent`. Docker populates it from the image on first run. Both the **codex** and **channels-bridge** providers do this by default — no home directory configuration needed.
+Add a named volume for `/home/agent` in your agent.yaml. Home directory persists across container restarts.
 
 ```yaml
 # agents/named-volume/agent.yaml
@@ -36,16 +36,18 @@ runtime:
   provider: "github.com/donbader/agent-fleet/runtimes/codex"
 egress:
   - allow-all
+volumes:
+  - "named-volume-home:/home/agent"
 ```
 
 **How it works:**
-- Provider's render.sh outputs `coder-home:/home/agent` in the compose fragment
+- You declare a named volume targeting `/home/agent`
 - Docker creates the volume on first `compose up`
 - Data persists across container restarts
 - Rebuilding the image doesn't affect existing volume data
 - Delete the volume to reset: `agent-fleet compose down -v`
 
-**Best for:** Most use cases. Zero config, persistent home.
+**Best for:** Persistent home without git tracking. Agent keeps all state across restarts.
 
 ---
 
