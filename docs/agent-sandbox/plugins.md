@@ -2,10 +2,10 @@
 
 ## Runtime Plugins
 
-Runtime plugins set `BaseImage` and install the agent CLI. Auto-enabled by the `runtime:` field — user doesn't list them under `plugins:`.
+Runtime plugins set `BaseImage` and install the agent CLI. Selected by the `runtime:` field. Only one per agent.
 
 ```yaml
-runtime: codex    # auto-enables codex plugin → sets BaseImage + installs @openai/codex
+runtime: codex    # uses codex RuntimePlugin → sets BaseImage + installs @openai/codex
 ```
 
 | Runtime | Base Image | Packages |
@@ -23,7 +23,11 @@ plugins:
     cmd: "my-agent-cli"
 ```
 
-## Credential Plugins
+## Feature Plugins
+
+Additive capabilities. Multiple per agent. Listed under `features:` in config.
+
+### Credential Features
 
 Declare egress rules + implement `RequestHandler` for credential injection at the gateway.
 
@@ -56,7 +60,7 @@ plugins:
 
 The plugin auto-derives egress rules from the configured URLs. User triggers auth via channel command (`/oauth notion`).
 
-## Channel Plugins
+### Channel Features
 
 Contribute both egress rules (gateway side) AND bridge plugin code (channel side). One plugin, two contributions.
 
@@ -65,7 +69,7 @@ Contribute both egress rules (gateway side) AND bridge plugin code (channel side
 | `telegram` | api.telegram.org → URL rewrite (bot token) | grammy bot, long-poll |
 | `slack` | slack.com → OAuth token refresh | Slack socket mode |
 
-## Feature Plugins
+### Infrastructure Features
 
 | Plugin | Contributes |
 |--------|-------------|

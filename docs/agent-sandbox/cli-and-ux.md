@@ -30,15 +30,15 @@ name: coder
 runtime: codex
 
 # Add credentials:
-plugins:
+features:
   github: { token: "${GITHUB_PAT}" }
 
 # Add channels:
-plugins:
+features:
   telegram: { bot_token: "${BOT_TOKEN}", allowed_users: ["me"] }
 
 # Full power:
-plugins:
+features:
   github: { token: "${GITHUB_PAT}" }
   docker: true
   telegram: { bot_token: "${BOT_TOKEN}", allowed_users: ["me"] }

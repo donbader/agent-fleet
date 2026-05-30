@@ -2,26 +2,49 @@
 
 ## Design
 
-One plugin type. No categories. A plugin is a self-contained Go module that declares what it contributes to the container. The CLI merges all contributions and generates deployment artifacts.
+Two plugin types with clear separation:
 
-## Interface
+- **RuntimePlugin** — sets base image + installs agent CLI. One per agent.
+- **FeaturePlugin** — additive capabilities (credentials, channels, Docker, home). Multiple per agent.
+
+## Interfaces
 
 ```go
 package sdk
 
-type Plugin interface {
+type RuntimePlugin interface {
     Name() string
     ConfigSchema() ConfigSchema
-    Contribute(ctx ContributeContext) (*Contributions, error)
+    Contribute(ctx ContributeContext) (*RuntimeContributions, error)
+}
+
+type RuntimeContributions struct {
+    BaseImage string     // e.g. "node:22-slim"
+    Commands  []string   // install agent CLI (RUN instructions)
+    Cmd       []string   // what bridge spawns (e.g. ["codex", "--headless"])
+}
+
+type FeaturePlugin interface {
+    Name() string
+    ConfigSchema() ConfigSchema
+    Contribute(ctx ContributeContext) (*FeatureContributions, error)
+}
+
+type FeatureContributions struct {
+    Image      *ImageContribution
+    Gateway    *GatewayContribution
+    Bridge     *BridgeContribution
+    Compose    *ComposeContribution
+    Entrypoint *EntrypointContribution
 }
 ```
 
-Minimal interface. All runtime logic lives inside Contributions (gateway handler, bridge source, entrypoint hooks). CLI calls `Contribute()` at build time to generate artifacts. Gateway and bridge also call `Contribute()` at startup to get their runtime handlers.
+Minimal interfaces. All runtime logic lives inside Contributions (gateway handler, bridge source, entrypoint hooks). CLI calls `Contribute()` at build time to generate artifacts. Gateway and bridge also call `Contribute()` at startup to get their runtime handlers.
 
-## Contributions (Grouped by Concern)
+## Feature Contributions (Grouped by Concern)
 
 ```go
-type Contributions struct {
+type FeatureContributions struct {
     Image      *ImageContribution
     Gateway    *GatewayContribution
     Bridge     *BridgeContribution
@@ -123,11 +146,17 @@ plugins/<name>/
 
 ```go
 // cmd/agent-sandbox/plugins.go
-var Registry = []sdk.Plugin{
-    codex.New(), claudecode.New(), pi.New(),               // runtimes
+var Runtimes = []sdk.RuntimePlugin{
+    codex.New(), claudecode.New(), pi.New(),
+}
+
+var Features = []sdk.FeaturePlugin{
     github.New(), mcpoauth.New(), staticheader.New(),     // credentials
     docker.New(), telegram.New(), slack.New(),              // features/channels
+    homevc.New(),                                          // home-version-control
 }
 ```
 
-All plugins compiled into one CLI binary and one gateway binary. No per-agent compilation. Runtime config determines which are active.
+All plugins compiled into one CLI binary and one gateway binary. No per-agent compilation. Config determines which runtime + features are active.
+
+CLI enforces at config load time: `runtime:` must match exactly one RuntimePlugin. `features:` keys must each match a FeaturePlugin.

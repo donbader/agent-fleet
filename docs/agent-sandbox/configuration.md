@@ -15,7 +15,7 @@ my-agent/
 name: coder
 runtime: codex
 
-plugins:
+features:
   github:
     token: "${GITHUB_PAT}"
   docker: true
@@ -40,12 +40,12 @@ agents:
   - reviewer
 
 shared:
-  plugins:
+  features:
     github:
       token: "${GITHUB_PAT}"
 ```
 
-Per-agent plugins **override** shared (same name → per-agent wins). Different plugins merge additively.
+Per-agent features **override** shared (same name → per-agent wins). Different features merge additively.
 
 ## Home & Packages
 
@@ -61,12 +61,12 @@ Managed by the `home-version-control` plugin. See [plugins.md](plugins.md#home-v
 
 Override mechanism uses `/opt/home-override/` staging (not in volume path). Entrypoint `cp -a` on every start ensures tracked configs always win over runtime state.
 
-## Plugin Config
+## Feature Config
 
-Plugins accept config via the `plugins:` map:
+Features accept config via the `features:` map:
 
 ```yaml
-plugins:
+features:
   github:
     token: "${GITHUB_PAT}"       # secret reference
   docker: true                    # shorthand for {} (all defaults)
@@ -79,4 +79,4 @@ plugins:
     runtime_volumes: ["agent-home:/home/agent"]
 ```
 
-`true` is shorthand for `{}` (enable with all defaults). CLI validates against each plugin's `ConfigSchema()`.
+`true` is shorthand for `{}` (enable with all defaults). CLI validates against each feature's `ConfigSchema()`.

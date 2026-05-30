@@ -4,10 +4,10 @@
 
 | # | Decision | Rationale |
 |---|----------|-----------|
-| 1 | Single plugin type | No artificial categorization. Plugin contributes what it needs. |
+| 1 | Two plugin types (Runtime + Feature) | Runtime is singular (base image). Features are additive. Config reads naturally. |
 | 2 | Universal gateway binary | Build once, configure per-agent. No per-agent compilation. |
 | 3 | Bridge always entrypoint | Agent is always a child process. No WrapCmd hack. |
-| 4 | Runtime is a plugin (auto-enabled) | New runtime = new plugin. No CLI hardcoding. custom-runtime for unsupported. |
+| 4 | Runtime is a plugin (auto-enabled) | New runtime = new plugin. No CLI hardcoding. |
 | 5 | Allow-all egress default | Dev agents need unrestricted installs. MITM only where needed. |
 | 6 | Gateway inside each container | Self-contained. Per-agent config without routing complexity. |
 | 7 | Compile-time plugin import | Single binary. Type-safe. No runtime discovery. |
