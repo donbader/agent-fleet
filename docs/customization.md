@@ -31,16 +31,16 @@ By default, containers are **ephemeral** (home directory resets on restart) but 
 
 ### volumes
 
-Mount host directories or override provider volumes.
+Mount named volumes or other paths. Use this to persist the home directory.
 
 ```yaml
 # agent.yaml
 volumes:
-  - "./agents/coder/home:/home/agent"
-  - "./agents/coder/workspace:/workspace"
+  - "coder-home:/home/agent"    # named volume — allowed
+  - "./workspace:/workspace"    # bind mount to non-home path — allowed
 ```
 
-Paths are relative to the fleet root (where docker-compose.yml is generated).
+> ⛔ **Bind mounts to `/home/agent` are banned.** The compose generator automatically removes them during `agent-fleet generate`. This is a security measure — bind mounts create a file channel that bypasses the sandbox. Use named volumes or `user_base` instead.
 
 ### user_base
 

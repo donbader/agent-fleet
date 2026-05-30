@@ -49,38 +49,16 @@ egress:
 
 ---
 
-### bind-mount (host-visible)
+### ~~bind-mount~~ (BANNED)
 
-Bind-mounts a host directory as the home. The agent's files are directly visible and editable on the host.
+> ⛔ Bind-mounting host directories to `/home/agent` is **not allowed**. The compose generator automatically removes any bind mount targeting the agent's home directory.
 
-```yaml
-# agents/bind-mount/agent.yaml
-runtime:
-  provider: "github.com/donbader/agent-fleet/runtimes/codex"
-egress:
-  - allow-all
-volumes:
-  - "./agents/bind-mount/home:/home/agent"
-```
+**Why:** Bind mounts create a bidirectional file channel that bypasses the sandbox. The agent could write malicious files to the host filesystem, defeating the purpose of isolation.
 
-**How it works:**
-- The `volumes` field in agent.yaml adds volumes to the compose service
-- Path is relative to fleet root (where docker-compose.yml lives)
-- Agent writes are immediately visible on host and vice versa
-
-**Best for:** Debugging (inspecting agent state from host), or sharing files between host and container in real-time.
-
-**Not recommended for git version control of configs** — the agent writes runtime state (caches, temp files, auth tokens) into the home directory. You'd need extensive `.gitignore` and it's hard to separate intentional configs from agent-generated artifacts. Use [custom-base](#custom-base-home-overriding) instead.
-
-**Security considerations:**
-- ⚠️ Creates a bidirectional file channel that partially bypasses the sandbox
-- Agent can write files to the host filesystem (within the mounted path)
-- If mount path is too broad, agent could access sensitive host files
-- Conflicts with agent-fleet's sandbox isolation philosophy
-
-**Other tradeoffs:**
-- Permission issues on Linux (container UID ≠ host UID)
-- Need `.gitignore` for transient files (.cache, node_modules, etc.)
+**Alternatives:**
+- Use **named-volume** for persistent home
+- Use **custom-base** for git-tracked configs
+- Use **ephemeral** for clean sandbox
 
 ---
 
