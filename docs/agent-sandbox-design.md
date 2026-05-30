@@ -105,9 +105,10 @@ type ImageContribution struct {
 
 // What the gateway needs at runtime
 type GatewayContribution struct {
-    Rules    []EgressRule  // ordered within this plugin
-    Priority int           // cross-plugin evaluation order (lower = first)
+    Rules []EgressRule  // hosts this plugin handles
 }
+
+// CLI merge: different hosts → map. Same host claimed by two plugins → error.
 
 // Channel plugin for the bridge
 type BridgeContribution struct {
@@ -115,6 +116,19 @@ type BridgeContribution struct {
     Source embed.FS        // TypeScript source to extract
     Config map[string]any  // runtime config passed to bridge
 }
+
+// TypeScript interface that channel plugins must implement:
+//
+//   export interface ChannelPlugin {
+//       name: string;
+//       start(config: Record<string, any>): Promise<void>;
+//       stop(): Promise<void>;
+//       onMessage(handler: (msg: IncomingMessage) => void): void;
+//       send(msg: OutgoingMessage): Promise<void>;
+//   }
+//
+// Bridge dynamically imports from /opt/bridge/plugins/<name>/
+// and calls start() with the Config from BridgeContribution.
 
 // Docker Compose service definition
 type ComposeContribution struct {
@@ -146,7 +160,8 @@ type Hook struct {
 
 - **Clear ownership**: each generator (Dockerfile, compose, gateway) only reads its own sub-struct
 - **Explicit conflicts**: `EnvVar.Strategy` declares how to handle duplicates
-- **Ordered execution**: `Hook.Priority` and `GatewayContribution.Priority` control cross-plugin ordering
+- **Ordered execution**: `Hook.Priority` controls entrypoint hook ordering
+- **Conflict detection**: same host claimed by two plugins → error at merge time
 - **Nil = not contributed**: plugin only fills what it needs, rest is nil
 
 ### Module Structure
