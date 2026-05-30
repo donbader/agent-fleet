@@ -25,7 +25,7 @@ plugins:
 
 ## Credential Plugins
 
-Declare egress rules + implement `Injector` for credential injection at the gateway.
+Declare egress rules + implement `RequestHandler` for credential injection at the gateway.
 
 | Plugin | Hosts | Injection |
 |--------|-------|-----------|
@@ -69,7 +69,7 @@ Contribute both egress rules (gateway side) AND bridge plugin code (channel side
 
 | Plugin | Contributes |
 |--------|-------------|
-| `docker` | DinD sidecar, docker CLI, DOCKER_HOST env, DockerInjector in gateway |
+| `docker` | DinD sidecar, docker CLI, DOCKER_HOST env, DockerHandler in gateway |
 | `home-version-control` | Custom commands, entrypoint hooks, runtime volumes |
 
 ### home-version-control plugin

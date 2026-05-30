@@ -13,15 +13,10 @@ type Plugin interface {
     Name() string
     ConfigSchema() ConfigSchema
     Contribute(ctx ContributeContext) (*Contributions, error)
-    NewInjector(cfg map[string]any) (Injector, error)  // nil if no runtime injection needed
-}
-
-type Injector interface {
-    InjectCredentials(req *http.Request) error
 }
 ```
 
-`Contribute()` runs at build time (in the CLI). `Injector` runs at runtime (inside the gateway binary).
+Minimal interface. All runtime logic lives inside Contributions (gateway handler, bridge source, entrypoint hooks). CLI calls `Contribute()` at build time to generate artifacts. Gateway and bridge also call `Contribute()` at startup to get their runtime handlers.
 
 ## Contributions (Grouped by Concern)
 
@@ -47,10 +42,17 @@ type ImageContribution struct {
 
 // What the gateway needs at runtime
 type GatewayContribution struct {
-    Rules []EgressRule  // hosts this plugin handles
+    Hosts      []string                                    // hosts this plugin handles
+    NewHandler func(cfg map[string]any) (RequestHandler, error)  // factory for runtime handler
 }
 
-// CLI merge: different hosts → map. Same host claimed by two plugins → error.
+type RequestHandler interface {
+    HandleRequest(req *http.Request) error
+}
+
+// CLI uses Hosts to generate gateway-config.yaml.
+// Gateway binary calls Contribute() at startup → uses NewHandler to create runtime handlers.
+// Same pattern as bridge loading TypeScript from BridgeContribution.Source.
 
 // Channel plugin for the bridge
 type BridgeContribution struct {

@@ -89,10 +89,15 @@ func TestContribute(t *testing.T) {
     assert.Equal(t, []string{"github.com", "*.github.com"}, contrib.EgressRules[0].Hosts)
 }
 
-func TestInjector(t *testing.T) {
-    injector, _ := New().NewInjector(map[string]any{"token": "ghp_real"})
+func TestHandler(t *testing.T) {
+    p := github.New()
+    contrib, _ := p.Contribute(sdk.ContributeContext{
+        AgentName: "test",
+        Config:    map[string]any{"token": "ghp_real"},
+    })
+    handler, _ := contrib.Gateway.NewHandler(map[string]any{"token": "ghp_real"})
     req := httptest.NewRequest("GET", "https://api.github.com/repos", nil)
-    injector.InjectCredentials(req)
+    handler.HandleRequest(req)
     assert.Equal(t, "token ghp_real", req.Header.Get("Authorization"))
 }
 ```

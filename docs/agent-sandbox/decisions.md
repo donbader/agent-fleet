@@ -62,7 +62,6 @@ type Plugin interface {
     Name() string
     ConfigSchema() ConfigSchema
     Contribute(ctx ContributeContext) (*Contributions, error)
-    NewInjector(cfg map[string]any) (Injector, error)
 }
 
 // New capabilities → new fields (non-breaking)

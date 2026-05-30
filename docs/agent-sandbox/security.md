@@ -37,7 +37,7 @@ When `docker: true`, the docker plugin contributes a DinD sidecar. The gateway i
 
 1. Agent runs `docker run ...` → connects to `dind:2375`
 2. Gateway intercepts (iptables, like all TCP)
-3. Gateway's `DockerInjector` validates the request (block privileged, host binds)
+3. Gateway's `DockerHandler` validates the request (block privileged, host binds)
 4. Injects gateway redirect into spawned container config
 5. Forwards to real DinD
 
