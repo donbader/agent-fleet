@@ -47,9 +47,10 @@ The user-facing command-line tool. Commands:
 | Command | Description |
 |---------|-------------|
 | `agent-fleet init <name>` | Scaffold a new fleet directory with example fleet.yaml |
-| `agent-fleet up` | Generate Docker Compose and start all agents |
-| `agent-fleet down` | Tear down all containers |
-| `agent-fleet status` | Show running agents, channels, and health |
+| `agent-fleet generate` | Generate Docker Compose, gateway rules, .env.example, .gitignore |
+| `agent-fleet compose up -d --build` | Build images and start all agents |
+| `agent-fleet compose down` | Tear down all containers |
+| `agent-fleet compose ps` | Show running agents and health |
 | `agent-fleet logs <agent>` | Stream logs from an agent |
 | `agent-fleet exec <agent>` | Open a shell in an agent container |
 

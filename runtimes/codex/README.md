@@ -4,7 +4,7 @@ Runs OpenAI Codex CLI agent inside a sandboxed container with transparent egress
 
 ## Daily Workflow
 
-Once the fleet is up (`agent-fleet up`), working with the codex agent is the same as running codex locally — just sandboxed.
+Once the fleet is up (`agent-fleet generate && agent-fleet compose up -d --build`), working with the codex agent is the same as running codex locally — just sandboxed.
 
 `agent-fleet compose` passes through to `docker compose` with the correct project name and compose file, so you never need to remember container names.
 

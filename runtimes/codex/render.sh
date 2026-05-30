@@ -3,7 +3,7 @@
 # Input: render context available via RENDER_CONTEXT env var
 # Output: Docker Compose service fragment (YAML) to stdout
 #
-# Uses `agent-fleet ctx` to extract values from the render context.
+# Uses `agent-fleet tools ctx` to extract values from the render context.
 # No external dependencies (jq, python, etc.) required.
 #
 # Note: user-defined env vars (from agent.yaml "env:" section) are
@@ -11,10 +11,10 @@
 
 set -e
 
-NAME=$(agent-fleet ctx .name)
-GATEWAY_HOST=$(agent-fleet ctx .gateway_host)
-GATEWAY_PORT=$(agent-fleet ctx .gateway_port)
-AUTH_PORT=$(agent-fleet ctx .options.auth_port --default 1455)
+NAME=$(agent-fleet tools ctx .name)
+GATEWAY_HOST=$(agent-fleet tools ctx .gateway_host)
+GATEWAY_PORT=$(agent-fleet tools ctx .gateway_port)
+AUTH_PORT=$(agent-fleet tools ctx .options.auth_port --default 1455)
 
 cat <<EOF
 build:

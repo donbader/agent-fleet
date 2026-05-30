@@ -34,7 +34,7 @@ func init() {
 	_ = templateInjectCmd.MarkFlagRequired("source")
 
 	templateCmd.AddCommand(templateInjectCmd)
-	rootCmd.AddCommand(templateCmd)
+	toolsCmd.AddCommand(templateCmd)
 }
 
 func runTemplateInject(cmd *cobra.Command, args []string) error {

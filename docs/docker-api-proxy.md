@@ -158,7 +158,7 @@ Agent-spawned containers do NOT receive this token — they cannot talk to the p
 When the sandbox is destroyed, the proxy cleans up all agent-spawned containers:
 
 ```
-1. agent-fleet down (or sandbox timeout)
+1. agent-fleet compose down (or sandbox timeout)
 2. Proxy queries Docker for containers with label agent-fleet.sandbox=<id>
 3. Proxy stops and removes all matching containers
 4. Proxy removes itself
