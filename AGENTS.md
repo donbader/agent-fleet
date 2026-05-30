@@ -16,7 +16,7 @@ agent-fleet deploys AI coding agents (Codex, Claude Code, Pi) inside Docker cont
 
 ```
 agent-fleet/
-├── cmd/agent-fleet/          # CLI entrypoint (up, down, status, validate, init, upgrade)
+├── cmd/agent-fleet/          # CLI entrypoint (up, down, status, validate, init, upgrade, compose)
 ├── cmd/gateway/              # Standalone gateway proxy entrypoint
 ├── pkg/
 │   ├── config/               # fleet.yaml + agent.yaml parsing and validation

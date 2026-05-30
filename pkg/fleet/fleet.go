@@ -147,6 +147,27 @@ func (f *Fleet) Status(ctx context.Context) (string, error) {
 	return f.runner.Ps(ctx, composeFile, projectName)
 }
 
+// Compose runs an arbitrary docker compose command with the fleet's project name and compose file.
+func (f *Fleet) Compose(ctx context.Context, args []string) error {
+	resolved, err := config.Resolve(f.fleetFile)
+	if err != nil {
+		return fmt.Errorf("resolving config: %w", err)
+	}
+
+	composeFile := filepath.Join(f.outputDir, "docker-compose.yml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		return fmt.Errorf("fleet not running (no compose file found) — run 'agent-fleet up' first")
+	}
+
+	projectName := resolved.Fleet.Fleet.Name
+	cmdArgs := append([]string{"compose", "-f", composeFile, "-p", projectName}, args...)
+	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // ComposeFilePath returns the path to the generated docker-compose.yml.
 func (f *Fleet) ComposeFilePath() string {
 	return filepath.Join(f.outputDir, "docker-compose.yml")
