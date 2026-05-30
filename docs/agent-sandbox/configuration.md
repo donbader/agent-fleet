@@ -5,8 +5,8 @@
 ```
 my-agent/
   agent.yaml          ← only config file
-  home/               ← override home directory (optional)
-  packages.sh         ← custom install script (optional)
+  home/               ← override home directory (optional, auto-staged)
+  scripts/            ← entrypoint hooks (optional)
   .env                ← secrets
 ```
 
@@ -22,14 +22,13 @@ plugins:
   telegram:
     bot_token: "${TELEGRAM_BOT_TOKEN}"
     allowed_users: ["donbader"]
-
-packages:
-  - ripgrep
-  - fd-find
-
-home:
-  persist: true
-  override: ./home/
+  home-version-control:
+    commands:
+      - "apt-get install -y ripgrep fd-find"
+    entrypoint_hooks:
+      - ./scripts/sync-dotfiles.sh
+    runtime_volumes:
+      - "agent-home:/home/agent"
 ```
 
 ## Multi-Agent (Optional)
@@ -48,28 +47,19 @@ shared:
 
 Per-agent plugins **override** shared (same name → per-agent wins). Different plugins merge additively.
 
-## Home Directory
+## Home & Packages
 
-| Mode | Config | Behavior |
-|------|--------|----------|
-| Ephemeral (default) | — | Home resets on restart. Auth token persists via small named volume. |
-| Persistent | `home.persist: true` | Named volume at /home/agent. Runtime state survives. |
-| Override | `home.override: ./home/` | Files staged to /opt/home-override/, cp'd on every start. |
-| Combined | Both | Persistent + override always wins on start. |
+Managed by the `home-version-control` plugin. See [plugins.md](plugins.md#home-version-control-plugin) for details.
+
+| Strategy | Config | Behavior |
+|----------|--------|----------|
+| Ephemeral (default) | no plugin or no `runtime_volumes` | Home resets on restart. Auth token persists via small named volume. |
+| Persistent | `runtime_volumes: ["agent-home:/home/agent"]` | Named volume. Runtime state survives restarts. |
+| Override | `./home/` dir exists | Files staged to /opt/home-override/, cp'd on every start. |
+| Custom hooks | `entrypoint_hooks: [./scripts/...]` | Scripts run on every start (after override copy). |
+| Custom packages | `commands: ["apt-get install ..."]` | RUN during docker build. |
 
 Override mechanism uses `/opt/home-override/` staging (not in volume path). Entrypoint `cp -a` on every start ensures tracked configs always win over runtime state.
-
-## Custom Packages
-
-Declarative list (apt by default, specify type for others):
-```yaml
-packages:
-  - ripgrep
-  - name: typescript
-    type: npm
-```
-
-For complex installs, add `packages.sh` (runs during docker build after declarative packages).
 
 ## Plugin Config
 
@@ -83,6 +73,10 @@ plugins:
   telegram:
     bot_token: "${BOT_TOKEN}"
     allowed_users: ["donbader"]
+  home-version-control:
+    commands: ["apt-get install -y ripgrep"]
+    entrypoint_hooks: [./scripts/setup.sh]
+    runtime_volumes: ["agent-home:/home/agent"]
 ```
 
 `true` is shorthand for `{}` (enable with all defaults). CLI validates against each plugin's `ConfigSchema()`.

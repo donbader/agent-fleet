@@ -42,8 +42,10 @@ plugins:
   github: { token: "${GITHUB_PAT}" }
   docker: true
   telegram: { bot_token: "${BOT_TOKEN}", allowed_users: ["me"] }
-packages: [ripgrep, fd-find]
-home: { persist: true, override: ./home/ }
+  home-version-control:
+    commands: ["apt-get install -y ripgrep fd-find"]
+    entrypoint_hooks: [./scripts/sync-dotfiles.sh]
+    runtime_volumes: ["agent-home:/home/agent"]
 ```
 
 ### Interactive Init

@@ -70,3 +70,46 @@ Contribute both egress rules (gateway side) AND bridge plugin code (channel side
 | Plugin | Contributes |
 |--------|-------------|
 | `docker` | DinD sidecar, docker CLI, DOCKER_HOST env, DockerInjector in gateway |
+| `home-version-control` | Custom commands, entrypoint hooks, runtime volumes |
+
+### home-version-control plugin
+
+Gives users direct control over image build commands, startup hooks, and persistent volumes. Replaces top-level `packages:` and `home:` fields — everything goes through the plugin model.
+
+```yaml
+plugins:
+  home-version-control:
+    commands:
+      - "apt-get install -y ripgrep fd-find"
+      - "npm install -g typescript"
+    entrypoint_hooks:
+      - ./scripts/sync-dotfiles.sh
+      - ./scripts/setup-git.sh
+    runtime_volumes:
+      - "agent-home:/home/agent"
+```
+
+| Field | Contribution | Behavior |
+|-------|-------------|----------|
+| `commands` | Image.Commands | RUN during docker build (after base packages) |
+| `entrypoint_hooks` | Entrypoint.Hooks | Scripts run on every container start (before agent) |
+| `runtime_volumes` | Compose.Volumes | Named volumes mounted at runtime |
+
+The `./home/` override directory (if present) is auto-staged to `/opt/home-override/` and cp'd by a built-in hook. User's `entrypoint_hooks` run after the override copy.
+
+```go
+func (p *HomeVersionControl) Contribute(ctx sdk.ContributeContext) (*sdk.Contributions, error) {
+    cfg := parseConfig(ctx.Config)
+    return &sdk.Contributions{
+        Image: &sdk.ImageContribution{
+            Commands: cfg.Commands,
+        },
+        Entrypoint: &sdk.EntrypointContribution{
+            Hooks: loadHooks(cfg.EntrypointHooks),
+        },
+        Compose: &sdk.ComposeContribution{
+            Volumes: cfg.RuntimeVolumes,
+        },
+    }, nil
+}
+```
