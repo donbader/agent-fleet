@@ -66,9 +66,8 @@ type Plugin interface {
 
 // New capabilities → new fields (non-breaking)
 type ImageContribution struct {
-    BaseImage string  // v1.0
-    Files     []File  // v1.0
-    Commands  []string // v1.0
+    Files    []File    // v1.0
+    Commands []string  // v1.0
     // ...
     CacheFrom []string // v1.3 — added later, nil = not used
 }

@@ -56,9 +56,8 @@ type FeatureContributions struct {
 Each sub-struct is nil if the plugin doesn't contribute to that concern.
 
 ```go
-// What goes into the Dockerfile
+// What goes into the Dockerfile (additive, cannot change base image)
 type ImageContribution struct {
-    BaseImage string       // only one plugin may set (conflict = error)
     Files     []File       // COPY into image (embed.FS source + dest path)
     Commands  []string     // RUN commands (no FROM/ENTRYPOINT allowed)
 }
