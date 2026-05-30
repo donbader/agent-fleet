@@ -1,6 +1,6 @@
-# Customizing Your Agent
+# Customization
 
-agent-fleet is designed so you create your own folder (or repo) outside of agent-fleet and customize there. agent-fleet is just the CLI tool — your fleet config, home directories, and custom Dockerfiles live in your own repo.
+agent-fleet is just the CLI tool. Your fleet config, home directories, and custom Dockerfiles live in your own repo.
 
 ```
 my-fleet/                    ← your repo
@@ -9,70 +9,28 @@ my-fleet/                    ← your repo
   agents/
     coder/
       agent.yaml
-      Dockerfile             ← custom base image (optional, see Home Overriding)
-      home-override/         ← config files to bake into image (optional)
-        .gitconfig
-    reviewer/
-      agent.yaml
+      Dockerfile             ← partial template (optional)
+      home-override/         ← config files to bake in (optional)
 ```
 
-## Home Directory Strategies
+## What You Can Customize
 
-The agent's home directory (`/home/agent`) can be set up in different ways depending on your needs.
+### volumes
 
-### Named Volume
-
-The provider's render.sh outputs a named volume for the home directory. Docker populates it from the image on first run. No extra configuration needed — this is what the codex and channels-bridge runtimes do out of the box.
-
-```yaml
-# agent.yaml — nothing special, just pick a runtime
-runtime:
-  provider: "github.com/donbader/agent-fleet/runtimes/codex"
-egress:
-  - allow-all
-```
-
-**Generated compose (by provider's render.sh):**
-```yaml
-volumes:
-  - coder-home:/home/agent
-```
-
-**Behavior:**
-- Home directory persists across container restarts
-- Agent can write freely
-- Rebuild image doesn't affect existing volume data
-
-### Bind Mount
-
-Use the `volumes` field in agent.yaml to bind-mount a host directory as the home. Good for version-controlling the home directory with git.
+Mount host directories or override provider volumes.
 
 ```yaml
 # agent.yaml
-runtime:
-  provider: "github.com/donbader/agent-fleet/runtimes/codex"
-egress:
-  - allow-all
 volumes:
   - "./agents/coder/home:/home/agent"
+  - "./agents/coder/workspace:/workspace"
 ```
 
-Note: the path is relative to the compose file (fleet root), not relative to agent.yaml.
+Paths are relative to the fleet root (where docker-compose.yml is generated).
 
-**Behavior:**
-- Agent writes are visible on host
-- Changes on host are immediately visible in container
-- Version-control the home directory with git
+### user_base
 
-**Tradeoffs:**
-- Permission issues on Linux (container UID vs host UID)
-- Need `.gitignore` for transient files (node_modules, .cache, etc.)
-
-### Home Overriding
-
-Combine a named volume with a custom Dockerfile template to bake config files into the image. This lets you track fixed configs (like `.gitconfig`, `.bashrc`, tool settings) in git while still having a persistent writable home directory.
-
-Docker populates the named volume from the image on first run, so your tracked configs become the initial state.
+A partial Dockerfile template injected into the runtime's build. Use it to install extra tools or bake config files into the image.
 
 ```yaml
 # agent.yaml
@@ -80,74 +38,45 @@ runtime:
   provider: "github.com/donbader/agent-fleet/runtimes/codex"
   options:
     user_base: "./Dockerfile"
-egress:
-  - allow-all
 ```
 
 ```dockerfile
-# agents/coder/Dockerfile (partial template — not standalone)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ripgrep \
-    fd-find \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
+# agents/coder/Dockerfile (partial — not standalone)
+RUN apt-get update && apt-get install -y ripgrep fd-find jq
 
 COPY --chown=${AGENT_USER}:${AGENT_USER} home-override/ ${AGENT_HOME}/
 ```
 
-**Behavior:**
-- Extra tools available in the container
-- Config files baked into image → populate volume on first run
-- Rebuild image + delete volume → fresh home with updated config
+The provider substitutes magic variables and injects your content into the runtime Dockerfile. Build context is your agent directory (`agents/coder/`).
 
-## user_base
+**Magic variables** (provider-defined):
 
-Your Dockerfile is a **template** — the provider reads it, substitutes magic variables, and injects it into the runtime's Dockerfile.
+| Variable | Value |
+|----------|-------|
+| `${AGENT_HOME}` | `/home/agent` |
+| `${AGENT_USER}` | `agent` |
 
-### Provider Magic Variables
+### env
 
-Each provider defines variables for things it controls:
+Environment variables passed to the agent container.
 
-| Variable | Description | Example |
-|----------|-------------|--------|
-| `${AGENT_HOME}` | Agent's home directory | `/home/agent` |
-| `${AGENT_USER}` | Agent's OS username | `agent` |
-
-Providers may define additional variables in their own docs. Use variables instead of hardcoding internal paths.
-
-### How It Works
-
-1. Provider reads your partial Dockerfile
-2. Substitutes magic variables
-3. Injects it into the runtime's Dockerfile (between base setup and finalize)
-4. Build context is set to your agent directory (so `COPY` paths are relative to `agents/coder/`)
-
-You don't need to include runtime setup (bridge, iptables, entrypoint) — the provider handles that.
-
-## Putting It Together
-
-A typical setup:
-
-```
-my-team-agents/              ← your repo (not agent-fleet)
-├── fleet.yaml
-├── .env                     ← secrets (gitignored)
-├── .env.example
-├── .gitignore
-└── agents/
-    ├── coder/
-    │   ├── agent.yaml
-    │   ├── Dockerfile       ← extra tools (Home Overriding)
-    │   └── home-override/
-    │       └── .gitconfig
-    └── reviewer/
-        └── agent.yaml       ← Named Volume (no customization)
+```yaml
+# agent.yaml
+env:
+  GH_TOKEN: proxy_dummy_token
+  EDITOR: vim
 ```
 
-Run:
-```bash
-cd my-team-agents
-agent-fleet generate && agent-fleet compose up -d --build
+### ports
+
+Expose container ports to the host.
+
+```yaml
+# agent.yaml
+ports:
+  - "1455:1455"
 ```
 
-agent-fleet resolves remote providers (runtimes, egress-rules) automatically. Your repo only contains your config and customizations.
+## Examples
+
+See [examples/fleet-home-strategy-demo](../examples/fleet-home-strategy-demo/) for a walkthrough of different home directory approaches (named volume, bind mount, home overriding).
