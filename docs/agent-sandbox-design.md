@@ -177,7 +177,7 @@ No per-agent compilation needed. Same binary, different config.
 
 ## Runtime Selection
 
-Runtime is NOT a plugin. It's a config value that tells the bridge which agent CLI to spawn.
+Runtime is a config value that tells the bridge which agent CLI to spawn. But the runtime's container requirements (base image, packages) are defined by a **runtime plugin** — a regular plugin that sets `BaseImage`.
 
 ```yaml
 runtime: codex          # bridge spawns: codex --args
@@ -185,14 +185,30 @@ runtime: claude-code    # bridge spawns: claude --args
 runtime: pi             # bridge spawns: pi --args
 ```
 
-The CLI knows what base image and packages each runtime needs (hardcoded mapping):
+Each runtime has a corresponding plugin that's **auto-enabled** based on the `runtime:` field:
 
-| Runtime | Base Image | Packages |
-|---------|-----------|----------|
-| `codex` | node:22-slim | git, curl, @openai/codex |
-| `claude-code` | node:22-slim | git, curl, @anthropic-ai/claude-code |
-| `pi` | node:22-slim | git, curl, pi-coding-agent |
-| `aider` | python:3.12-slim | git, aider-chat |
+```go
+// plugins/codex/plugin.go — auto-enabled when runtime: codex
+func (p *Plugin) Contribute(ctx sdk.ContributeContext) (*sdk.Contributions, error) {
+    return &sdk.Contributions{
+        BaseImage: "node:22-slim",
+        Packages:  sdk.Packages{Apt: []string{"git", "curl"}, Npm: []string{"@openai/codex"}},
+    }, nil
+}
+```
+
+This means adding a new runtime = adding a new plugin. No CLI release needed.
+
+| Runtime | Plugin | Base Image | Packages |
+|---------|--------|-----------|----------|
+| `codex` | `plugins/codex/` | node:22-slim | git, curl, @openai/codex |
+| `claude-code` | `plugins/claude-code/` | node:22-slim | git, curl, @anthropic-ai/claude-code |
+| `pi` | `plugins/pi/` | node:22-slim | git, curl, pi-coding-agent |
+| `aider` | `plugins/aider/` | python:3.12-slim | git, aider-chat |
+
+Runtime plugins are special only in that:
+1. They set `BaseImage` (only one plugin can do this)
+2. They're auto-enabled by the `runtime:` field (user doesn't list them under `plugins:`)
 
 ---
 
@@ -409,14 +425,33 @@ The plugin contributes:
 - `DOCKER_HOST=tcp://dind:2376` env var
 - Egress rule allowing connection to DinD
 
-Agent-spawned containers:
-- Run on the same internal network
-- Their egress also goes through the agent's gateway
-- Cannot spawn further containers (no Docker socket access)
+### Agent-Spawned Container Egress
+
+Agent-spawned containers also need egress through the gateway. Solution:
+
+1. Gateway listens on `0.0.0.0:8443` (not just localhost) inside the agent container
+2. Agent container exposes this port on the internal Docker network
+3. Spawned containers' entrypoint configures iptables to redirect to agent container's IP:8443
+4. The docker plugin contributes a "spawn template" — a minimal entrypoint script that DinD injects into spawned containers
+
+```
+Agent container (IP: 172.20.0.2)
+  └── Gateway listening on 0.0.0.0:8443
+
+Spawned container (IP: 172.20.0.5)
+  └── iptables -t nat -A OUTPUT -p tcp -j DNAT --to 172.20.0.2:8443
+```
+
+The docker plugin's DinD sidecar is configured to:
+- Force all spawned containers onto the internal network
+- Inject the gateway redirect entrypoint wrapper
+- Block `--privileged`, `--network host`, host volume mounts
+
+Spawned containers cannot spawn further containers (no Docker socket access).
 
 ### Multi-Agent Docker Sharing
 
-If multiple agents have `docker: true`, they share one DinD instance. Each agent's containers are isolated by Docker's built-in namespace (different container names/IDs).
+If multiple agents have `docker: true`, they share one DinD instance. Each agent's containers are isolated by Docker's built-in namespace (different container names/IDs). Each agent's spawned containers route through their own agent's gateway (different IPs).
 
 ---
 
@@ -490,18 +525,22 @@ agent-sandbox up
   │
   ├── For each agent:
   │     ├── Load agent.yaml
+  │     ├── Auto-enable runtime plugin (from runtime: field)
   │     ├── Merge shared plugins (if fleet mode)
   │     ├── For each plugin: call Contribute()
   │     ├── Merge all Contributions
   │     └── Validate (e.g., only one BaseImage, no conflicts)
   │
   ├── Generate build context (.build/):
-  │     ├── Dockerfile (merged: base + packages + plugins + user packages + home-override)
+  │     ├── gateway-src/ (extracted from go:embed — gateway Go source)
+  │     ├── bridge/ (extracted from go:embed — bridge TypeScript source)
+  │     ├── bridge-plugins/ (extracted from plugin embed.FS — channel TypeScript)
+  │     ├── Dockerfile (multi-stage: gateway compile + runtime)
   │     ├── gateway-config.yaml (merged egress rules from all plugins)
   │     ├── bridge-config.json (which channel plugins to load, runtime to spawn)
   │     ├── home-override/ (from user's home/ dir)
   │     ├── hooks/ (entrypoint hooks from plugins)
-  │     └── bridge/ (channel plugin TypeScript from plugins)
+  │     └── packages.sh (from user, if exists)
   │
   ├── Generate docker-compose.yml:
   │     ├── Agent service (build from .build/Dockerfile)
@@ -521,12 +560,17 @@ agent-sandbox up
 For an agent with: `runtime: codex`, `plugins: [github, telegram, docker]`, `packages: [ripgrep]`, `home.override: ./home/`
 
 ```dockerfile
-# Base (from runtime: codex)
+# Stage 1: Build gateway from source
+FROM golang:1.24 AS gateway-builder
+COPY gateway-src/ /src/
+RUN cd /src && CGO_ENABLED=0 go build -o /gateway ./cmd/gateway
+
+# Stage 2: Agent runtime
 FROM node:22-slim
 
 # System packages (runtime + plugins + user)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates iptables \
+    git curl ca-certificates iptables gosu \
     docker.io \
     ripgrep \
     && rm -rf /var/lib/apt/lists/*
@@ -548,14 +592,14 @@ COPY home-override/ /opt/home-override/
 COPY packages.sh /tmp/packages.sh
 RUN chmod +x /tmp/packages.sh && /tmp/packages.sh && rm /tmp/packages.sh
 
-# Gateway binary (universal, pre-built)
-COPY gateway /usr/local/bin/gateway
+# Gateway binary (built in stage 1)
+COPY --from=gateway-builder /gateway /usr/local/bin/gateway
 
 # Entrypoint hooks (from plugins)
 COPY hooks/ /opt/entrypoint-hooks/
 
-# Agent user
-RUN useradd -m -s /bin/bash agent
+# Users: agent (unprivileged) + gateway (proxy process)
+RUN useradd -m -s /bin/bash agent && useradd -r -s /usr/sbin/nologin gateway
 
 # Entrypoint
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -685,7 +729,7 @@ agent-sandbox/
 | 1 | Single plugin type | Simpler mental model. Plugin contributes what it needs, no artificial categorization. |
 | 2 | Universal gateway binary | Build once, configure per-agent. Avoids per-agent Go compilation. |
 | 3 | Bridge always entrypoint | No WrapCmd hack. Bridge is the orchestrator, agent is always a child. |
-| 4 | Runtime is config, not plugin | Runtimes are just "what CLI to spawn" — not complex enough to warrant plugin interface. |
+| 4 | Runtime is a plugin (auto-enabled) | Avoids hardcoded mappings. New runtime = new plugin. `custom-runtime` plugin for unsupported agents. |
 | 5 | Allow-all egress default | Dev agents need unrestricted package installs. MITM only where injection needed. |
 | 6 | Gateway inside each container | Self-contained. No cross-agent credential leakage. Per-agent config without routing complexity. |
 | 7 | Compile-time plugin import | Single binary distribution. Type-safe. No runtime discovery overhead. |
@@ -718,13 +762,45 @@ agent-sandbox/
 
 ---
 
+## Resolved Design Questions
+
+### Q1: How do agent-spawned containers route through the gateway?
+
+Gateway listens on `0.0.0.0:8443` (network-accessible, not just localhost). The docker plugin configures DinD to inject an iptables redirect wrapper into spawned containers, pointing to the agent container's IP on the internal network.
+
+### Q2: Where does the gateway binary come from?
+
+Docker multi-stage build. The gateway source code is extracted to the build context by the CLI (from `go:embed`). Stage 1 compiles it with `golang:1.24`. Stage 2 copies the binary. No pre-built downloads needed.
+
+### Q3: Where does the bridge TypeScript code come from?
+
+Embedded in the CLI binary via `go:embed`. During `agent-sandbox up`, the CLI extracts the bridge source to `.build/bridge/`. Same for channel plugin TypeScript from each plugin's embedded FS.
+
+### Q4: How to add new runtimes without CLI release?
+
+Runtimes ARE plugins (they set `BaseImage`). Adding a new runtime = adding a new plugin to the registry + rebuild CLI. However, since all plugins are compiled in, this does require a CLI release. This is acceptable because new runtimes are rare events (new agent CLIs don't appear weekly).
+
+For users who need a custom runtime before it's officially supported, they can use a `custom-runtime` plugin:
+```yaml
+plugins:
+  custom-runtime:
+    base_image: "python:3.12-slim"
+    packages: ["git", "my-agent-cli"]
+    cmd: "my-agent-cli"
+```
+
+### Q5: Gateway user in Dockerfile?
+
+The generated Dockerfile creates both users: `agent` (unprivileged, runs bridge + agent) and `gateway` (system user, runs proxy). The iptables rule exempts `gateway` uid so the proxy's own outbound connections aren't redirected.
+
+---
+
 ## Open Questions
 
 1. **Plugin versioning** — How to handle breaking changes in plugin interface? SDK version pinning?
 2. **Custom egress restrictions** — Some users may want default-deny. Add `egress: deny-all` option?
 3. **Plugin marketplace** — External plugins beyond built-in? Go module proxy? Git clone?
-4. **Hot reload** — Can plugins/config change without full rebuild? (Probably not for v1)
-5. **Resource limits** — CPU/memory limits per agent? Per-agent or fleet-level?
-6. **Health checks** — How to detect agent crash vs idle? Bridge responsibility?
-7. **Logging** — Structured logs? Log aggregation for multi-agent?
-8. **Auth flow** — How does user authenticate agent runtimes (codex device flow, claude login)?
+4. **Resource limits** — CPU/memory limits per agent? Per-agent or fleet-level?
+5. **Health checks** — How to detect agent crash vs idle? Bridge responsibility?
+6. **Logging** — Structured logs? Log aggregation for multi-agent?
+7. **Auth flow** — How does user authenticate agent runtimes (codex device flow, claude login)?
