@@ -79,7 +79,7 @@ Docker populates the named volume from the image on first run, so your tracked c
 runtime:
   provider: "github.com/donbader/agent-fleet/runtimes/codex"
   options:
-    user_base_image_stage: "./Dockerfile"
+    user_base: "./Dockerfile"
 egress:
   - allow-all
 ```
@@ -100,7 +100,7 @@ COPY --chown=${AGENT_USER}:${AGENT_USER} home-override/ ${AGENT_HOME}/
 - Config files baked into image → populate volume on first run
 - Rebuild image + delete volume → fresh home with updated config
 
-## user_base_image_stage
+## user_base
 
 Your Dockerfile is a **template** — the provider reads it, substitutes magic variables, and injects it into the runtime's Dockerfile.
 

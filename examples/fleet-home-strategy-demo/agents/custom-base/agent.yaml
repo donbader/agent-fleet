@@ -8,7 +8,7 @@
 runtime:
   provider: "github.com/donbader/agent-fleet/runtimes/codex"
   options:
-    user_base_image_stage: "./Dockerfile"
+    user_base: "./Dockerfile"
 
 egress:
   - allow-all

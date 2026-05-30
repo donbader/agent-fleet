@@ -63,7 +63,7 @@ runtime:
   provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge"
   options:
     agent_provider: "<runtime-provider-path>"   # Which agent to spawn
-    user_base_image_stage: "./Dockerfile"       # Optional: custom image stage
+    user_base: "./Dockerfile"       # Optional: custom image stage
     channels:
       - provider: "<channel-provider-path>"
         options: {}                             # Channel-specific options
@@ -71,7 +71,7 @@ runtime:
 
 ### Image Customization (template injection)
 
-When `user_base_image_stage` is set, the provider reads your partial Dockerfile and injects it into the runtime's build. Your Dockerfile is a template — not a standalone image:
+When `user_base` is set, the provider reads your partial Dockerfile and injects it into the runtime's build. Your Dockerfile is a template — not a standalone image:
 
 ```dockerfile
 # agents/coder/Dockerfile (partial template)

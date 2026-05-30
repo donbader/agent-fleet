@@ -56,6 +56,7 @@ type VolumeConfig struct{}
 type RenderContext struct {
 	Name        string            `json:"name"`
 	FleetName   string            `json:"fleet_name"`
+	AgentDir    string            `json:"agent_dir"`
 	Options     map[string]any    `json:"options"`
 	Env         map[string]string `json:"env"`
 	GatewayHost string            `json:"gateway_host"`
@@ -234,6 +235,7 @@ func (g *Generator) executeRenderScript(providerDir string, name string, agent *
 	ctx := RenderContext{
 		Name:        name,
 		FleetName:   g.fleet.Fleet.Fleet.Name,
+		AgentDir:    filepath.Join(g.repoRoot, "agents", name),
 		Options:     agent.Runtime.Options,
 		Env:         agent.Env,
 		GatewayHost: g.gatewayServiceName(),
