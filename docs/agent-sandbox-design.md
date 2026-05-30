@@ -261,7 +261,7 @@ Contribute both egress rules (gateway side) AND bridge plugin code (channel side
 
 | Plugin | Contributes |
 |--------|-------------|
-| `docker` | DinD sidecar, docker CLI, DOCKER_HOST env, egress to DinD |
+| `docker` | DinD sidecar, docker CLI, DOCKER_HOST env, DockerInjector in gateway |
 
 ---
 
@@ -379,12 +379,20 @@ Agent never sees real credentials. Bridge gets dummy tokens. Real creds exist on
 
 ### Docker Access
 
-When `docker: true`, the docker plugin contributes a DinD sidecar. Agent-spawned containers also route through the gateway:
+When `docker: true`, the docker plugin contributes a DinD sidecar. The gateway itself handles Docker API validation — no separate proxy container needed.
 
-1. Gateway listens on `0.0.0.0:8443` (network-accessible)
-2. DinD injects iptables redirect wrapper into spawned containers
-3. Spawned containers' traffic → agent container's IP:8443 → gateway
-4. Spawned containers cannot spawn further containers (no Docker socket)
+1. Agent runs `docker run ...` → connects to `dind:2375`
+2. Gateway intercepts (iptables, like all TCP)
+3. Gateway's `DockerInjector` validates the request (block privileged, host binds)
+4. Injects gateway redirect into spawned container config
+5. Forwards to real DinD
+
+Docker API is HTTP (not HTTPS), so no MITM/TLS needed — plain HTTP inspection.
+
+Spawned containers:
+- Forced onto internal network
+- iptables injected to redirect egress → agent's gateway (0.0.0.0:8443)
+- Cannot spawn further containers (no DOCKER_HOST env)
 
 ---
 
