@@ -14,4 +14,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy all tracked configs into the home directory
-COPY home-override/ ${AGENT_HOME}/
+COPY --chown=${AGENT_USER}:${AGENT_USER} home-override/ ${AGENT_HOME}/
