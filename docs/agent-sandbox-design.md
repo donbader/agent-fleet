@@ -25,190 +25,168 @@ An opinionated agent sandbox orchestrator that deploys AI coding agents inside s
 │  agent-sandbox CLI (user's machine)                          │
 │  - Reads agent.yaml                                         │
 │  - Calls plugin.Contribute() for each enabled plugin        │
-│  - Merges contributions                                     │
-│  - Generates: Dockerfile, docker-compose.yml, gateway config│
+│  - Merges contributions → generates build artifacts         │
 │  - Runs: docker compose up                                  │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─ Per-Agent Container ───────────────────────────────────────┐
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  Gateway (universal Go binary)                       │    │
-│  │  - Transparent proxy (iptables forces all TCP here)  │    │
-│  │  - Evaluates egress rules from enabled plugins       │    │
-│  │  - MITM + credential injection (Injector interface)  │    │
-│  │  - Passthrough for non-injection traffic             │    │
-│  │  - Default: allow all (not default deny)             │    │
+│  │  Gateway (universal Go binary, runs as `gateway` user)│    │
+│  │  - iptables forces ALL TCP here (kernel enforced)    │    │
+│  │  - MITM + credential injection for matched hosts     │    │
+│  │  - Passthrough for everything else (allow-all)       │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  Bridge (TypeScript, always the entrypoint)          │    │
 │  │  - Spawns agent runtime as child process             │    │
 │  │  - Loads channel plugins (telegram, slack, etc.)     │    │
-│  │  - Routes messages between channels and agent        │    │
-│  │  - No channels configured → agent runs standalone    │    │
+│  │  - No channels → agent runs standalone               │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  Agent Runtime (child process of bridge)              │    │
+│  │  Agent Runtime (child of bridge)                      │    │
 │  │  - codex | claude-code | pi | aider                  │    │
 │  │  - Unaware of proxy, bridge, or channels             │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
-└──────────────────────────────────────────────────��──────────┘
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Plugin System
 
-### Single Plugin Type
+### Design
 
-No categories (runtime/credential/feature). A plugin is just a Go module that returns what it contributes. The CLI merges all contributions and resolves conflicts.
+One plugin type. No categories. A plugin is a self-contained Go module that declares what it contributes to the container. The CLI merges all contributions and generates deployment artifacts.
 
-### Plugin Interface
+### Interface
 
 ```go
-// sdk/plugin.go
 package sdk
 
 type Plugin interface {
-    // Identity
     Name() string
     ConfigSchema() ConfigSchema
-
-    // Build-time: what does this plugin contribute to the container?
     Contribute(ctx ContributeContext) (*Contributions, error)
-
-    // Runtime: credential injection logic (runs inside gateway binary)
-    // Return nil if this plugin doesn't need runtime injection.
-    NewInjector(cfg map[string]any) (Injector, error)
+    NewInjector(cfg map[string]any) (Injector, error)  // nil if no runtime injection needed
 }
 
 type Injector interface {
-    // Called by gateway for each intercepted request matching this plugin's egress rules
     InjectCredentials(req *http.Request) error
 }
 ```
 
-### Contributions Struct
+`Contribute()` runs at build time (in the CLI). `Injector` runs at runtime (inside the gateway binary).
+
+### Contributions
 
 ```go
 type Contributions struct {
-    // Container image
+    // Image
     BaseImage      string              // only one plugin may set this
-    Packages       Packages            // apt, npm, pip packages to install
-    DockerfilePre  []string            // Dockerfile lines before user customization
-    DockerfilePost []string            // Dockerfile lines after user customization
+    Packages       Packages            // apt, npm, pip
+    DockerfilePre  []string            // before user customization
+    DockerfilePost []string            // after user customization
 
-    // Egress / Gateway
-    EgressRules    []EgressRule        // hosts to match + injection behavior
+    // Gateway
+    EgressRules    []EgressRule        // hosts + injection behavior
 
-    // Bridge / Channels
-    BridgePlugin   *BridgePlugin       // TypeScript channel code to load in bridge
+    // Bridge
+    BridgePlugin   *BridgePlugin       // TypeScript channel code
 
-    // Compose topology
-    Services       map[string]Service  // sidecar containers (e.g., DinD)
-    Volumes        []string            // named volumes
-    Ports          []string            // exposed ports
-    Env            map[string]string   // environment variables
+    // Compose
+    Services       map[string]Service  // sidecars (DinD, etc.)
+    Volumes        []string
+    Ports          []string
+    Env            map[string]string
 
     // Entrypoint
-    Hooks          []embed.FS          // scripts to run before agent starts
-
-    // Embedded files
-    EmbeddedFiles  []EmbeddedDir       // files to COPY into container
+    Hooks          []embed.FS          // scripts run before agent starts
+    EmbeddedFiles  []EmbeddedDir       // files COPYed into container
 }
 ```
 
-### Plugin Module Structure
-
-Each plugin is a self-contained Go module:
+### Module Structure
 
 ```
 plugins/<name>/
-  go.mod                    ← independent Go module
-  plugin.go                 ← implements sdk.Plugin
-  plugin_test.go            ← unit tests
-  hooks/                    ← entrypoint hook scripts (optional)
-  bridge/                   ← TypeScript channel code (optional, for channel plugins)
-    src/
-    package.json
+  go.mod              ← independent Go module
+  plugin.go           ← implements sdk.Plugin
+  plugin_test.go
+  hooks/              ← entrypoint scripts (optional)
+  bridge/             ← TypeScript channel code (optional)
 ```
 
-### Plugin Connection: Compile-Time Import
-
-All plugins are imported in the CLI binary at compile time (Go workspace):
+### Registry (Compile-Time)
 
 ```go
 // cmd/agent-sandbox/plugins.go
 var Registry = []sdk.Plugin{
-    github.New(),
-    openai.New(),
-    anthropic.New(),
-    docker.New(),
-    telegram.New(),
-    slack.New(),
+    codex.New(), claudecode.New(), pi.New(), aider.New(),  // runtimes
+    github.New(), openai.New(), anthropic.New(),            // credentials
+    docker.New(), telegram.New(), slack.New(),              // features/channels
 }
 ```
 
-### Gateway: Universal Binary
-
-All plugins' Injector implementations are compiled into a single gateway binary. At runtime, the gateway reads its config to determine which injectors to activate.
-
-No per-agent compilation needed. Same binary, different config.
+All plugins compiled into one CLI binary and one gateway binary. No per-agent compilation. Runtime config determines which are active.
 
 ---
 
-## Planned Plugins
+## Plugins
 
-| Plugin | Contributes | Runtime Logic |
-|--------|-------------|---------------|
-| `github` | Egress rules for github.com, env GH_TOKEN=dummy | Static header injection (PAT) |
-| `openai` | Egress rules for api.openai.com | Static header injection (API key) |
-| `anthropic` | Egress rules for api.anthropic.com | Static header injection (API key) |
-| `docker` | DinD sidecar service, docker CLI package, egress to DinD | None (passthrough) |
-| `telegram` | Egress for api.telegram.org, bridge channel plugin | URL rewrite (bot token) |
-| `slack` | Egress for slack.com, bridge channel plugin | OAuth token refresh |
-| `notion` | Egress for api.notion.com | OAuth token exchange + refresh |
-| `custom-api` | User-defined host + header injection | Static header injection |
+### Runtime Plugins
 
----
-
-## Runtime Selection
-
-Runtime is a config value that tells the bridge which agent CLI to spawn. But the runtime's container requirements (base image, packages) are defined by a **runtime plugin** — a regular plugin that sets `BaseImage`.
+Runtime plugins set `BaseImage` and install the agent CLI. Auto-enabled by the `runtime:` field — user doesn't list them under `plugins:`.
 
 ```yaml
-runtime: codex          # bridge spawns: codex --args
-runtime: claude-code    # bridge spawns: claude --args
-runtime: pi             # bridge spawns: pi --args
+runtime: codex    # auto-enables codex plugin → sets BaseImage + installs @openai/codex
 ```
 
-Each runtime has a corresponding plugin that's **auto-enabled** based on the `runtime:` field:
+| Runtime | Base Image | Packages |
+|---------|-----------|----------|
+| `codex` | node:22-slim | git, curl, @openai/codex |
+| `claude-code` | node:22-slim | git, curl, @anthropic-ai/claude-code |
+| `pi` | node:22-slim | git, curl, pi-coding-agent |
+| `aider` | python:3.12-slim | git, aider-chat |
 
-```go
-// plugins/codex/plugin.go — auto-enabled when runtime: codex
-func (p *Plugin) Contribute(ctx sdk.ContributeContext) (*sdk.Contributions, error) {
-    return &sdk.Contributions{
-        BaseImage: "node:22-slim",
-        Packages:  sdk.Packages{Apt: []string{"git", "curl"}, Npm: []string{"@openai/codex"}},
-    }, nil
-}
+For unsupported runtimes:
+```yaml
+plugins:
+  custom-runtime:
+    base_image: "python:3.12-slim"
+    packages: ["git", "my-agent-cli"]
+    cmd: "my-agent-cli"
 ```
 
-This means adding a new runtime = adding a new plugin. No CLI release needed.
+### Credential Plugins
 
-| Runtime | Plugin | Base Image | Packages |
-|---------|--------|-----------|----------|
-| `codex` | `plugins/codex/` | node:22-slim | git, curl, @openai/codex |
-| `claude-code` | `plugins/claude-code/` | node:22-slim | git, curl, @anthropic-ai/claude-code |
-| `pi` | `plugins/pi/` | node:22-slim | git, curl, pi-coding-agent |
-| `aider` | `plugins/aider/` | python:3.12-slim | git, aider-chat |
+Declare egress rules + implement `Injector` for credential injection at the gateway.
 
-Runtime plugins are special only in that:
-1. They set `BaseImage` (only one plugin can do this)
-2. They're auto-enabled by the `runtime:` field (user doesn't list them under `plugins:`)
+| Plugin | Hosts | Injection |
+|--------|-------|-----------|
+| `github` | github.com, *.github.com | Header: `Authorization: token <PAT>` |
+| `openai` | api.openai.com | Header: `Authorization: Bearer <key>` |
+| `anthropic` | api.anthropic.com | Header: `Authorization: Bearer <key>` |
+| `notion` | api.notion.com | OAuth token exchange + auto-refresh |
+| `custom-api` | user-defined | Header injection |
+
+### Channel Plugins
+
+Contribute both egress rules (gateway side) AND bridge plugin code (channel side). One plugin, two contributions.
+
+| Plugin | Egress | Bridge |
+|--------|--------|--------|
+| `telegram` | api.telegram.org → URL rewrite (bot token) | grammy bot, long-poll |
+| `slack` | slack.com → OAuth token refresh | Slack socket mode |
+
+### Feature Plugins
+
+| Plugin | Contributes |
+|--------|-------------|
+| `docker` | DinD sidecar, docker CLI, DOCKER_HOST env, egress to DinD |
 
 ---
 
@@ -219,7 +197,7 @@ Runtime plugins are special only in that:
 ```
 my-agent/
   agent.yaml          ← only config file
-  home/               ← files to override in home directory (optional)
+  home/               ← override home directory (optional)
   packages.sh         ← custom install script (optional)
   .env                ← secrets
 ```
@@ -240,26 +218,13 @@ plugins:
 packages:
   - ripgrep
   - fd-find
-  - jq
 
 home:
-  persist: true         # named volume for home directory
-  override: ./home/     # override on every start from this dir
+  persist: true
+  override: ./home/
 ```
 
-### Multi-Agent (Optional Fleet File)
-
-```
-my-fleet/
-  fleet.yaml
-  agents/
-    coder/
-      agent.yaml
-      home/
-    reviewer/
-      agent.yaml
-  .env
-```
+### Multi-Agent (Optional)
 
 ```yaml
 # fleet.yaml
@@ -271,187 +236,198 @@ shared:
   plugins:
     github:
       token: "${GITHUB_PAT}"
-    openai:
-      api_key: "${OPENAI_API_KEY}"
 ```
 
-```yaml
-# agents/coder/agent.yaml
-runtime: codex
-plugins:
-  telegram:
-    bot_token: "${CODER_BOT_TOKEN}"
-    allowed_users: ["donbader"]
-  docker: true
-```
-
-```yaml
-# agents/reviewer/agent.yaml
-runtime: claude-code
-plugins:
-  telegram:
-    bot_token: "${REVIEWER_BOT_TOKEN}"
-    allowed_users: ["donbader"]
-```
-
-### Plugin Config Merge Rules
-
-- Per-agent plugins **override** shared plugins (same plugin name → per-agent wins)
-- Different plugins → merged additively
-- No complex merge logic needed
+Per-agent plugins **override** shared (same name → per-agent wins). Different plugins merge additively.
 
 ---
 
 ## Home Directory
 
-### Default: Ephemeral
+| Mode | Config | Behavior |
+|------|--------|----------|
+| Ephemeral (default) | — | Home resets on restart. Auth token persists via small named volume. |
+| Persistent | `home.persist: true` | Named volume at /home/agent. Runtime state survives. |
+| Override | `home.override: ./home/` | Files staged to /opt/home-override/, cp'd on every start. |
+| Combined | Both | Persistent + override always wins on start. |
 
-Container home resets on every restart. Only auth tokens persist (via small named volume for token path only).
-
-### Persist: Named Volume
-
-```yaml
-home:
-  persist: true
-```
-
-Adds a named volume at `/home/agent`. Runtime state survives restarts.
-
-### Override: Tracked Configs
-
-```yaml
-home:
-  override: ./home/
-```
-
-Files in `./home/` are:
-1. Build time: COPYed to `/opt/home-override/` (staging, not in volume path)
-2. Runtime: entrypoint `cp -a /opt/home-override/. /home/agent/` on every start
-
-This ensures tracked configs always win over runtime state, even with a persistent volume.
-
-### Combined (Recommended)
-
-```yaml
-home:
-  persist: true       # runtime state persists
-  override: ./home/   # tracked configs override on every start
-```
+Override mechanism uses `/opt/home-override/` staging (not in volume path). Entrypoint `cp -a` on every start ensures tracked configs always win over runtime state.
 
 ---
 
 ## Custom Packages
 
-### Declarative (Simple)
-
+Declarative list (apt by default, specify type for others):
 ```yaml
 packages:
-  - ripgrep           # apt-get install
-  - fd-find
+  - ripgrep
   - name: typescript
-    type: npm         # npm install -g
+    type: npm
 ```
 
-### Script (Complex)
-
-```
-my-agent/
-  packages.sh         ← runs during docker build
-```
-
-```bash
-#!/bin/bash
-# Custom install logic
-curl -fsSL https://example.com/install.sh | sh
-pip install some-package
-```
-
-If `packages.sh` exists, it runs after declarative packages.
+For complex installs, add `packages.sh` (runs during docker build after declarative packages).
 
 ---
 
 ## Network & Security
 
-### Egress Default: Allow All + Inject Where Needed
+### Egress Model
 
-Unlike agent-fleet (default deny), agent-sandbox defaults to **allow all traffic**. MITM only happens for hosts where credential injection is needed.
+**Allow all by default.** MITM only for hosts where credential injection is needed. Everything else passes through with end-to-end TLS preserved.
 
-Rationale: Dev agents need to `npm install`, `pip install`, `curl` arbitrary URLs. Default deny creates too much friction for the primary use case.
+Rationale: Dev agents need `npm install`, `pip install`, `curl` arbitrary URLs. Default deny creates too much friction.
 
-```
-Agent connects to registry.npmjs.org
-  → Gateway: no matching plugin rule → passthrough (end-to-end TLS)
-
-Agent connects to api.github.com
-  → Gateway: github plugin rule matches → MITM + inject PAT
-```
-
-### Transparent Proxy (iptables)
+### Transparent Proxy
 
 ```bash
-# Inside container (entrypoint, as root)
+# TCP: redirect to gateway (kernel enforced, agent cannot bypass)
 iptables -t nat -A OUTPUT -p tcp -m owner ! --uid-owner gateway -j REDIRECT --to-port 8443
+# UDP: only DNS allowed (to gateway's resolver), rest dropped
+iptables -A OUTPUT -p udp --dport 53 -m owner ! --uid-owner gateway -j REDIRECT --to-port 8053
+iptables -A OUTPUT -p udp -m owner ! --uid-owner gateway -j DROP
 ```
 
-- All TCP from agent/bridge → redirected to gateway
-- Gateway's own connections → exempt (it reaches the internet)
-- Agent cannot bypass (kernel enforced)
+### Credential Flow
 
-### Credential Injection
+```
+Agent → api.github.com:443
+  → iptables redirects to gateway:8443
+  → Gateway reads SNI: "api.github.com"
+  → Matches github plugin rule → MITM mode
+  → Terminates TLS (sandbox CA), reads HTTP request
+  → Strips dummy token, injects real PAT
+  → Opens TLS to real api.github.com, forwards
+  → Agent receives response (thinks it talked directly)
+```
 
-| Plugin | Mechanism |
-|--------|-----------|
-| github | MITM → inject `Authorization: token <PAT>` header |
-| openai | MITM → inject `Authorization: Bearer <key>` header |
-| telegram | MITM → URL path rewrite (`/botPLACEHOLDER/` → `/bot<REAL>/`) |
-| notion | MITM → inject `Authorization: Bearer <token>` + auto-refresh |
+Agent never sees real credentials. Bridge gets dummy tokens. Real creds exist only in gateway memory.
 
-Agent never sees real credentials. Even if agent reads bridge's env vars, it only finds dummy/placeholder values.
+### Docker Access
+
+When `docker: true`, the docker plugin contributes a DinD sidecar. Agent-spawned containers also route through the gateway:
+
+1. Gateway listens on `0.0.0.0:8443` (network-accessible)
+2. DinD injects iptables redirect wrapper into spawned containers
+3. Spawned containers' traffic → agent container's IP:8443 → gateway
+4. Spawned containers cannot spawn further containers (no Docker socket)
 
 ---
 
-## Docker Access (docker plugin)
+## Security Hardening
 
-When `docker: true`:
+### Attack Surface
+
+| Vector | Mitigation |
+|--------|------------|
+| Agent reads bridge env vars via /proc | Bridge only has dummy tokens. Real creds in gateway (different user, hidepid=2). |
+| Agent kills gateway | Gateway runs as `gateway` user. Agent cannot signal it. |
+| Agent modifies iptables | NET_ADMIN dropped after entrypoint. Agent has no capabilities. |
+| Agent modifies gateway config | Config owned by root, mode 0444. |
+| Agent ptraces bridge | hidepid=2 + different UIDs + no-new-privileges. |
+| DNS tunneling | DNS redirected to gateway's resolver. No raw UDP allowed. |
+| DinD direct access | DinD uses TLS client cert auth. Cert in gateway-owned path. |
+| Resource exhaustion | mem_limit, cpus, pids_limit per container. |
+
+### Container Security
 
 ```yaml
-plugins:
-  docker: true
+services:
+  agent:
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]        # entrypoint only, dropped after
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp, /run]
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 256
 ```
 
-The plugin contributes:
-- DinD sidecar container (Docker daemon)
-- `docker` CLI package in agent container
-- `DOCKER_HOST=tcp://dind:2376` env var
-- Egress rule allowing connection to DinD
-
-### Agent-Spawned Container Egress
-
-Agent-spawned containers also need egress through the gateway. Solution:
-
-1. Gateway listens on `0.0.0.0:8443` (not just localhost) inside the agent container
-2. Agent container exposes this port on the internal Docker network
-3. Spawned containers' entrypoint configures iptables to redirect to agent container's IP:8443
-4. The docker plugin contributes a "spawn template" — a minimal entrypoint script that DinD injects into spawned containers
+### File Permissions
 
 ```
-Agent container (IP: 172.20.0.2)
-  └── Gateway listening on 0.0.0.0:8443
-
-Spawned container (IP: 172.20.0.5)
-  └── iptables -t nat -A OUTPUT -p tcp -j DNAT --to 172.20.0.2:8443
+/etc/gateway/config.yaml    root:root       0444
+/etc/gateway/ca.key         gateway:gateway 0400
+/usr/local/bin/gateway      root:root       0555
+/home/agent/                agent:agent     0750 (writable, volume)
 ```
 
-The docker plugin's DinD sidecar is configured to:
-- Force all spawned containers onto the internal network
-- Inject the gateway redirect entrypoint wrapper
-- Block `--privileged`, `--network host`, host volume mounts
+### Failure Modes
 
-Spawned containers cannot spawn further containers (no Docker socket access).
+| Failure | Behavior |
+|---------|----------|
+| Gateway crashes | All TCP fails (safe default). Bridge detects, restarts or exits. |
+| Bridge crashes | Agent dies (child). Docker restart policy recovers. |
+| DinD crashes | Docker commands fail. Agent retries. |
 
-### Multi-Agent Docker Sharing
+---
 
-If multiple agents have `docker: true`, they share one DinD instance. Each agent's containers are isolated by Docker's built-in namespace (different container names/IDs). Each agent's spawned containers route through their own agent's gateway (different IPs).
+## Build Flow
+
+```
+agent-sandbox up
+  │
+  ├── Detect mode: agent.yaml (single) or fleet.yaml (multi)
+  ├── Auto-enable runtime plugin from runtime: field
+  ├── Merge shared plugins (if fleet mode)
+  ├── For each plugin: Contribute() → merge all Contributions
+  │
+  ├── Generate .build/:
+  │     ├── gateway-src/        (go:embed → gateway Go source)
+  │     ├── bridge/             (go:embed → bridge TypeScript)
+  │     ├── bridge-plugins/     (from plugin embed.FS)
+  │     ├── home-override/      (from user's home/ dir)
+  │     ├── hooks/              (from plugins)
+  │     ├── Dockerfile          (multi-stage: gateway compile + runtime)
+  │     ├── gateway-config.yaml (merged egress rules)
+  │     └── bridge-config.json  (channels + runtime to spawn)
+  │
+  ├── Generate docker-compose.yml + .env.example
+  └── docker compose up -d --build
+```
+
+### Generated Dockerfile (Multi-Stage)
+
+```dockerfile
+# Stage 1: Compile gateway
+FROM golang:1.24 AS gateway-builder
+COPY gateway-src/ /src/
+RUN cd /src && CGO_ENABLED=0 go build -o /gateway ./cmd/gateway
+
+# Stage 2: Runtime
+FROM node:22-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates iptables gosu docker.io ripgrep \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @openai/codex
+
+COPY bridge/ /opt/bridge/
+RUN cd /opt/bridge && npm install --production
+COPY bridge-plugins/telegram/ /opt/bridge/plugins/telegram/
+
+COPY home-override/ /opt/home-override/
+COPY packages.sh /tmp/packages.sh
+RUN chmod +x /tmp/packages.sh && /tmp/packages.sh && rm /tmp/packages.sh
+
+COPY --from=gateway-builder /gateway /usr/local/bin/gateway
+COPY hooks/ /opt/entrypoint-hooks/
+
+RUN useradd -m -s /bin/bash agent && useradd -r -s /usr/sbin/nologin gateway
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["node", "/opt/bridge/src/index.js"]
+```
+
+### Distribution
+
+- **Gateway source**: embedded in CLI via `go:embed`. Extracted to `.build/gateway-src/`. Compiled in Docker multi-stage (user doesn't need Go).
+- **Bridge source**: embedded in CLI via `go:embed`. Extracted to `.build/bridge/`.
+- **Channel plugins**: embedded in each plugin's Go module via `go:embed`. Extracted to `.build/bridge-plugins/`.
 
 ---
 
@@ -463,179 +439,130 @@ If multiple agents have `docker: true`, they share one DinD instance. Each agent
 │  ┌─ coder ───────────────────────────────────────────────┐  │
 │  │  Gateway (github + openai + docker + telegram rules)   │  │
 │  │  Bridge → codex                                        │  │
-│  │  iptables → gateway                                    │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌─ reviewer ────────────────────────────────────────────┐  │
 │  │  Gateway (github + anthropic + telegram rules)         │  │
 │  │  Bridge → claude-code                                  │  │
-│  │  iptables → gateway                                    │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌─ dind (shared) ───────────────────────────────────────┐  │
 │  │  Docker daemon                                         │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
-│  ┌─ Agent-spawned containers ────────────────────────────┐  │
-│  │  Also on internal network, egress via agent's gateway  │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- Each agent has its own gateway instance (same universal binary, different config)
-- Agents can communicate with each other (same network, no restriction)
-- No special inter-agent protocol built-in
-- DinD shared if multiple agents need Docker
+Each agent has its own gateway instance (same binary, different config). Agents share the network (can communicate). DinD shared if multiple agents need Docker.
 
 ---
 
-## CLI Commands
+## CLI
 
 ```bash
-# Single agent
-agent-sandbox init                      # scaffold agent.yaml + home/
-agent-sandbox init --runtime codex      # with specific runtime
-agent-sandbox up                        # build + start
-agent-sandbox down                      # stop + remove
-agent-sandbox exec [cmd]                # shell into container (default: bash)
-agent-sandbox logs                      # stream logs
-
-# Multi-agent (when fleet.yaml exists)
-agent-sandbox up                        # start all agents
-agent-sandbox up coder                  # start specific agent
-agent-sandbox down                      # stop all
-agent-sandbox exec coder [cmd]          # shell into specific agent
-agent-sandbox logs reviewer             # logs for specific agent
-
-# Utility
+agent-sandbox init [--runtime codex]    # interactive scaffold
+agent-sandbox up [agent-name]           # build + start
+agent-sandbox down [agent-name]         # stop
+agent-sandbox exec [agent-name] [cmd]   # shell (default: bash)
+agent-sandbox logs [agent-name]         # stream logs
+agent-sandbox status                    # health dashboard
+agent-sandbox plugins                   # list available
+agent-sandbox plugins info <name>       # plugin details
+agent-sandbox validate                  # check config + suggest fixes
 agent-sandbox upgrade                   # self-update
-agent-sandbox plugins                   # list available plugins
-agent-sandbox validate                  # validate config
+agent-sandbox up --dry-run              # preview without building
+agent-sandbox up --debug                # verbose gateway + bridge logs
+agent-sandbox generate                  # write .build/ without starting
+agent-sandbox rebuild                   # rebuild image, keep container
+agent-sandbox restart                   # restart container, keep image
 ```
 
 ---
 
-## Build Flow
+## UX Design
 
-```
-agent-sandbox up
-  │
-  ├── Detect mode: agent.yaml (single) or fleet.yaml (multi)
-  │
-  ├── For each agent:
-  │     ├── Load agent.yaml
-  │     ├── Auto-enable runtime plugin (from runtime: field)
-  │     ├── Merge shared plugins (if fleet mode)
-  │     ├── For each plugin: call Contribute()
-  │     ├── Merge all Contributions
-  │     └── Validate (e.g., only one BaseImage, no conflicts)
-  │
-  ├── Generate build context (.build/):
-  │     ├── gateway-src/ (extracted from go:embed — gateway Go source)
-  │     ├── bridge/ (extracted from go:embed — bridge TypeScript source)
-  │     ├── bridge-plugins/ (extracted from plugin embed.FS — channel TypeScript)
-  │     ├── Dockerfile (multi-stage: gateway compile + runtime)
-  │     ├── gateway-config.yaml (merged egress rules from all plugins)
-  │     ├── bridge-config.json (which channel plugins to load, runtime to spawn)
-  │     ├── home-override/ (from user's home/ dir)
-  │     ├── hooks/ (entrypoint hooks from plugins)
-  │     └── packages.sh (from user, if exists)
-  │
-  ├── Generate docker-compose.yml:
-  │     ├── Agent service (build from .build/Dockerfile)
-  │     ├── Sidecar services (from plugin contributions, e.g., DinD)
-  │     ├── Networks (internal)
-  │     └── Volumes (named volumes from plugins + user config)
-  │
-  ├── Generate .env.example (scan ${VAR} patterns)
-  │
-  └── docker compose up -d --build
+### Progressive Disclosure
+
+```yaml
+# Minimal (works immediately):
+name: coder
+runtime: codex
+
+# Add credentials:
+plugins:
+  github: { token: "${GITHUB_PAT}" }
+
+# Add channels:
+plugins:
+  telegram: { bot_token: "${BOT_TOKEN}", allowed_users: ["me"] }
+
+# Full power:
+plugins:
+  github: { token: "${GITHUB_PAT}" }
+  docker: true
+  telegram: { bot_token: "${BOT_TOKEN}", allowed_users: ["me"] }
+packages: [ripgrep, fd-find]
+home: { persist: true, override: ./home/ }
 ```
 
----
+### Interactive Init
 
-## Generated Dockerfile (Example)
+Auto-detects `gh auth token`, suggests plugins based on runtime, creates `.env` with detected credentials.
 
-For an agent with: `runtime: codex`, `plugins: [github, telegram, docker]`, `packages: [ripgrep]`, `home.override: ./home/`
-
-```dockerfile
-# Stage 1: Build gateway from source
-FROM golang:1.24 AS gateway-builder
-COPY gateway-src/ /src/
-RUN cd /src && CGO_ENABLED=0 go build -o /gateway ./cmd/gateway
-
-# Stage 2: Agent runtime
-FROM node:22-slim
-
-# System packages (runtime + plugins + user)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates iptables gosu \
-    docker.io \
-    ripgrep \
-    && rm -rf /var/lib/apt/lists/*
-
-# Runtime agent CLI
-RUN npm install -g @openai/codex
-
-# Bridge (always present)
-COPY bridge/ /opt/bridge/
-RUN cd /opt/bridge && npm install --production
-
-# Channel plugins (from telegram plugin)
-COPY bridge-plugins/telegram/ /opt/bridge/plugins/telegram/
-
-# User home override
-COPY home-override/ /opt/home-override/
-
-# User packages.sh (if exists)
-COPY packages.sh /tmp/packages.sh
-RUN chmod +x /tmp/packages.sh && /tmp/packages.sh && rm /tmp/packages.sh
-
-# Gateway binary (built in stage 1)
-COPY --from=gateway-builder /gateway /usr/local/bin/gateway
-
-# Entrypoint hooks (from plugins)
-COPY hooks/ /opt/entrypoint-hooks/
-
-# Users: agent (unprivileged) + gateway (proxy process)
-RUN useradd -m -s /bin/bash agent && useradd -r -s /usr/sbin/nologin gateway
-
-# Entrypoint
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["node", "/opt/bridge/src/index.js"]
-```
-
----
-
-## Entrypoint Flow
+### Smart Validation
 
 ```bash
-#!/bin/sh
-set -eu
+$ agent-sandbox validate
+⚠ runtime 'codex' typically needs 'openai' plugin for API access.
+✓ Config valid (1 warning)
+```
 
-# 1. iptables redirect (transparent proxy)
-iptables -t nat -A OUTPUT -p tcp -m owner ! --uid-owner gateway -j REDIRECT --to-port 8443
+### Helpful Errors
 
-# 2. Start gateway (background, as gateway user)
-su -c "gateway --config /etc/gateway/config.yaml" gateway &
+```bash
+✗ Plugin 'github' failed: token is invalid or expired
+  Fix: gh auth refresh && agent-sandbox up
+```
 
-# 3. Home override (if /opt/home-override exists)
-if [ -d /opt/home-override ]; then
-    cp -a /opt/home-override/. /home/agent/
-    chown -R agent:agent /home/agent
-fi
+---
 
-# 4. Run entrypoint hooks (from plugins, as root)
-for hook in /opt/entrypoint-hooks/*.sh; do
-    [ -f "$hook" ] && . "$hook"
-done
+## DX (Plugin Authors)
 
-# 5. Drop to agent user, run bridge
-exec gosu agent "$@"
+### Scaffold
+
+```bash
+$ agent-sandbox plugin new my-corp-api
+Created plugins/my-corp-api/ (go.mod, plugin.go, plugin_test.go, README.md)
+```
+
+### Testing
+
+```go
+func TestContribute(t *testing.T) {
+    p := New()
+    contrib, err := p.Contribute(sdk.ContributeContext{
+        AgentName: "test",
+        Config:    map[string]any{"token": "ghp_test"},
+    })
+    require.NoError(t, err)
+    assert.Equal(t, []string{"github.com", "*.github.com"}, contrib.EgressRules[0].Hosts)
+}
+
+func TestInjector(t *testing.T) {
+    injector, _ := New().NewInjector(map[string]any{"token": "ghp_real"})
+    req := httptest.NewRequest("GET", "https://api.github.com/repos", nil)
+    injector.InjectCredentials(req)
+    assert.Equal(t, "token ghp_real", req.Header.Get("Authorization"))
+}
+```
+
+### Integration Test Helper
+
+```go
+sb := sdktest.NewTestSandbox(t, github.New(), telegram.New())
+defer sb.Cleanup()
+resp := sb.HTTPGet("https://api.github.com/user")
+assert.Equal(t, 200, resp.StatusCode)
 ```
 
 ---
@@ -644,80 +571,44 @@ exec gosu agent "$@"
 
 ```
 agent-sandbox/
-  go.work                           ← Go workspace (multi-module)
+  go.work
 
-  cmd/agent-sandbox/                ← CLI binary
+  cmd/agent-sandbox/        ← CLI binary
     go.mod
     main.go
-    cmd/
-      root.go
-      up.go
-      down.go
-      exec.go
-      logs.go
-      init.go
-      validate.go
-      upgrade.go
-    plugins.go                      ← plugin registry (imports all plugins)
+    cmd/                    ← cobra commands
+    plugins.go              ← registry
 
-  sdk/                              ← Plugin SDK (shared types + interface)
+  sdk/                      ← Plugin SDK
     go.mod
-    plugin.go                       ← Plugin interface
-    contributions.go                ← Contributions struct
-    config.go                       ← ConfigSchema types
-    egress.go                       ← EgressRule, Injector types
-    bridge.go                       ← BridgePlugin type
+    plugin.go
+    contributions.go
 
-  gateway/                          ← Universal gateway binary
+  gateway/                  ← Universal gateway binary
     go.mod
     cmd/gateway/main.go
-    proxy.go                        ← transparent proxy (iptables listener)
-    sni.go                          ← TLS SNI extraction
-    mitm.go                         ← MITM + credential injection
-    injector_registry.go            ← loads injectors from config
+    proxy.go, sni.go, mitm.go, injector_registry.go
 
-  bridge/                           ← Bridge runtime (TypeScript)
+  bridge/                   ← Bridge runtime (TypeScript)
     package.json
-    src/
-      index.ts                      ← main: spawn agent, load channel plugins
-      agent.ts                      ← child process management
-      plugin-loader.ts              ← dynamic channel plugin loading
-      types.ts                      ← ACP protocol types
+    src/index.ts, agent.ts, plugin-loader.ts, types.ts
 
   plugins/
-    github/
-      go.mod
-      plugin.go
-      plugin_test.go
-    openai/
-      go.mod
-      plugin.go
-    anthropic/
-      go.mod
-      plugin.go
-    docker/
-      go.mod
-      plugin.go
-    telegram/
-      go.mod
-      plugin.go
-      bridge/                       ← TypeScript channel plugin
-        src/telegram.ts
-        package.json
-    slack/
-      go.mod
-      plugin.go
-      bridge/
-        src/slack.ts
-        package.json
+    codex/      (go.mod, plugin.go)
+    claude-code/(go.mod, plugin.go)
+    github/     (go.mod, plugin.go, plugin_test.go)
+    openai/     (go.mod, plugin.go)
+    docker/     (go.mod, plugin.go)
+    telegram/   (go.mod, plugin.go, bridge/src/telegram.ts)
+    slack/      (go.mod, plugin.go, bridge/src/slack.ts)
 
   internal/
-    compose/                        ← docker-compose.yml generation
-    dockerfile/                     ← Dockerfile generation
-    config/                         ← agent.yaml + fleet.yaml parsing
-    merge/                          ← contribution merging + conflict detection
+    compose/    ← docker-compose.yml generation
+    dockerfile/ ← Dockerfile generation
+    config/     ← agent.yaml + fleet.yaml parsing
+    merge/      ← contribution merging + conflict detection
 
-  templates/                        ← entrypoint.sh, bridge base, etc.
+  templates/    ← entrypoint.sh, etc.
 ```
 
 ---
@@ -726,20 +617,19 @@ agent-sandbox/
 
 | # | Decision | Rationale |
 |---|----------|-----------|
-| 1 | Single plugin type | Simpler mental model. Plugin contributes what it needs, no artificial categorization. |
-| 2 | Universal gateway binary | Build once, configure per-agent. Avoids per-agent Go compilation. |
-| 3 | Bridge always entrypoint | No WrapCmd hack. Bridge is the orchestrator, agent is always a child. |
-| 4 | Runtime is a plugin (auto-enabled) | Avoids hardcoded mappings. New runtime = new plugin. `custom-runtime` plugin for unsupported agents. |
-| 5 | Allow-all egress default | Dev agents need unrestricted package installs. MITM only where injection needed. |
-| 6 | Gateway inside each container | Self-contained. No cross-agent credential leakage. Per-agent config without routing complexity. |
-| 7 | Compile-time plugin import | Single binary distribution. Type-safe. No runtime discovery overhead. |
-| 8 | Home override via /opt staging | Named volume hides image's /home/agent. Staging + entrypoint cp ensures tracked configs always win. |
-| 9 | Channel plugins are bridge sub-plugins | Channels are messaging concern, not sandbox concern. Bridge owns channel lifecycle. |
-| 10 | Credential injection via gateway | Even bridge gets dummy tokens. Agent in same container can't steal real credentials. |
-| 11 | Per-agent override shared plugins | Simple precedence: per-agent wins. No complex merge. |
-| 12 | Agents share network, no special protocol | Can communicate if needed, but no built-in inter-agent tooling. |
-| 13 | Optional fleet.yaml for multi-agent | Single agent is first-class. Multi-agent is additive, not required. |
-| 14 | Declarative packages + optional script | Simple cases: YAML list. Complex cases: packages.sh. |
+| 1 | Single plugin type | No artificial categorization. Plugin contributes what it needs. |
+| 2 | Universal gateway binary | Build once, configure per-agent. No per-agent compilation. |
+| 3 | Bridge always entrypoint | Agent is always a child process. No WrapCmd hack. |
+| 4 | Runtime is a plugin (auto-enabled) | New runtime = new plugin. No CLI hardcoding. custom-runtime for unsupported. |
+| 5 | Allow-all egress default | Dev agents need unrestricted installs. MITM only where needed. |
+| 6 | Gateway inside each container | Self-contained. Per-agent config without routing complexity. |
+| 7 | Compile-time plugin import | Single binary. Type-safe. No runtime discovery. |
+| 8 | Home override via /opt staging | Volume hides /home/agent. Staging + entrypoint cp ensures configs win. |
+| 9 | Channels are bridge sub-plugins | Messaging is bridge's concern. Plugin embeds TypeScript via go:embed. |
+| 10 | All credentials through gateway | Even bridge gets dummy tokens. Real creds never in container env. |
+| 11 | Gateway + bridge source via go:embed | CLI is self-contained. Docker multi-stage compiles gateway. No pre-built downloads. |
+| 12 | Optional fleet.yaml | Single agent first-class. Multi-agent additive. |
+| 13 | UDP restricted | DNS redirected to gateway resolver. All other UDP dropped. Prevents tunneling. |
 
 ---
 
@@ -747,478 +637,94 @@ agent-sandbox/
 
 | Aspect | agent-fleet | agent-sandbox |
 |--------|-------------|---------------|
-| Config files | fleet.yaml + agent.yaml | One agent.yaml (fleet.yaml optional) |
+| Config | fleet.yaml + agent.yaml | One agent.yaml (fleet optional) |
 | Egress rules | User writes manually | Auto-derived from plugins |
-| Runtime | Provider with render.sh | Config value (name) |
-| Plugins | Shell scripts (render.sh) | Go modules (declarative contributions) |
+| Runtime | Provider + render.sh | Plugin (auto-enabled by config) |
+| Extensibility | Shell scripts | Go modules (declarative) |
 | Home customization | user_base + init_scripts + Dockerfile | `home/` dir (auto-override) |
-| Package install | Write Dockerfile template | `packages:` list or `packages.sh` |
+| Packages | Write Dockerfile template | YAML list or packages.sh |
 | Docker access | Egress rule provider | `docker: true` |
-| Deploy workflow | generate → compose up (2 steps) | `up` (1 step) |
-| Egress default | Default deny | Allow all |
-| Gateway | Separate container (sidecar) | Inside agent container |
-| Multi-agent | Built-in (fleet-first) | Optional (single-agent-first) |
-| Extensibility | Remote providers (git clone) | Compiled plugins (Go modules) |
-
----
-
-## Security Hardening
-
-### Attack Surface Analysis
-
-| Vector | Risk | Mitigation |
-|--------|------|------------|
-| Agent reads `/proc/<bridge_pid>/environ` | Steal bridge env vars | Bridge only has dummy tokens. Real creds in gateway process (different user, hidepid=2). |
-| Agent kills gateway process | DoS (no egress) | Gateway runs as `gateway` user. Agent (`agent` user) cannot signal it. |
-| Agent modifies iptables | Bypass proxy | Entrypoint drops NET_ADMIN before running bridge. Agent user has no capabilities. |
-| Agent modifies gateway config | Change egress rules | `/etc/gateway/config.yaml` owned by root, mode 0444. |
-| Agent ptraces bridge process | Inject code, steal memory | Set `kernel.yama.ptrace_scope=1` + bridge and agent are different UIDs. |
-| DNS tunneling (data exfiltration) | Bypass TCP proxy via UDP DNS | Redirect DNS to gateway's built-in DNS resolver (UDP iptables rule). Only resolve, no tunnel. |
-| Raw UDP exfiltration | Bypass TCP-only proxy | Drop all outbound UDP except DNS (port 53) to gateway. |
-| Sandbox CA private key theft | Forge TLS certs | CA key owned by `gateway` user, mode 0400. Agent cannot read. |
-| DinD direct access | Bypass Docker API policy | DinD listens on TLS with client cert auth. Only agent container has the client cert (in gateway-owned path). |
-| Container escape (kernel exploit) | Full host access | Out of scope. Use `--security-opt=no-new-privileges`, drop all caps except NET_ADMIN (entrypoint only). |
-| Fork bomb / resource exhaustion | DoS host | Compose sets `mem_limit`, `cpus`, `pids_limit` per container. |
-
-### Hardened Entrypoint
-
-```bash
-#!/bin/sh
-set -eu
-
-# 1. iptables: redirect TCP + restrict UDP
-iptables -t nat -A OUTPUT -p tcp -m owner ! --uid-owner gateway -j REDIRECT --to-port 8443
-# Allow DNS to gateway's resolver only
-iptables -A OUTPUT -p udp --dport 53 -m owner ! --uid-owner gateway -j REDIRECT --to-port 8053
-# Drop all other UDP from non-gateway users
-iptables -A OUTPUT -p udp -m owner ! --uid-owner gateway -j DROP
-
-# 2. Start gateway (background, as gateway user)
-su -c "gateway --config /etc/gateway/config.yaml" gateway &
-
-# 3. Home override
-if [ -d /opt/home-override ]; then
-    cp -a /opt/home-override/. /home/agent/
-    chown -R agent:agent /home/agent
-fi
-
-# 4. Run entrypoint hooks (as root, before capability drop)
-for hook in /opt/entrypoint-hooks/*.sh; do
-    [ -f "$hook" ] && . "$hook"
-done
-
-# 5. Lock down: remove capabilities, hide other processes
-mount -o remount,hidepid=2 /proc
-
-# 6. Drop to agent user (no new privileges)
-exec setpriv --no-new-privs -- gosu agent "$@"
-```
-
-### Compose Security Options
-
-```yaml
-# Generated per-agent service
-services:
-  coder:
-    cap_drop: [ALL]
-    cap_add: [NET_ADMIN]  # only for entrypoint, dropped after
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /run
-    mem_limit: 4g
-    cpus: 2
-    pids_limit: 256
-```
-
-Note: `read_only: true` with tmpfs for /tmp and /run. Home directory is a named volume (writable). Gateway config and CA key are in read-only image layers.
-
-### File Permissions (inside container)
-
-```
-/etc/gateway/config.yaml    root:root   0444   (egress rules)
-/etc/gateway/ca.key         gateway:gateway 0400 (CA private key)
-/etc/gateway/ca.crt         root:root   0444   (CA cert, public)
-/usr/local/bin/gateway      root:root   0555   (binary)
-/usr/local/bin/entrypoint.sh root:root  0555   (entrypoint)
-/opt/home-override/         root:root   0755   (staging, read-only after copy)
-/opt/bridge/                root:root   0755   (bridge code)
-/home/agent/                agent:agent 0750   (writable home)
-```
-
-### Failure Modes
-
-| Failure | Behavior | Recovery |
-|---------|----------|----------|
-| Gateway crashes | All TCP connections fail (iptables still redirects to dead port) | Bridge detects, restarts gateway or exits |
-| Bridge crashes | Agent process dies (child of bridge) | Docker restart policy: `unless-stopped` |
-| DinD crashes | Docker commands fail inside agent | Agent retries or reports error |
-| Agent OOM killed | Container restarts | Docker restart policy |
-| Disk full | Writes fail | `pids_limit` + `mem_limit` prevent runaway |
-
----
-
-### Q1: How do agent-spawned containers route through the gateway?
-
-Gateway listens on `0.0.0.0:8443` (network-accessible, not just localhost). The docker plugin configures DinD to inject an iptables redirect wrapper into spawned containers, pointing to the agent container's IP on the internal network.
-
-### Q2: Where does the gateway binary come from?
-
-Docker multi-stage build. The gateway source code is extracted to the build context by the CLI (from `go:embed`). Stage 1 compiles it with `golang:1.24`. Stage 2 copies the binary. No pre-built downloads needed.
-
-### Q3: Where does the bridge TypeScript code come from?
-
-Embedded in the CLI binary via `go:embed`. During `agent-sandbox up`, the CLI extracts the bridge source to `.build/bridge/`. Same for channel plugin TypeScript from each plugin's embedded FS.
-
-### Q4: How to add new runtimes without CLI release?
-
-Runtimes ARE plugins (they set `BaseImage`). Adding a new runtime = adding a new plugin to the registry + rebuild CLI. However, since all plugins are compiled in, this does require a CLI release. This is acceptable because new runtimes are rare events (new agent CLIs don't appear weekly).
-
-For users who need a custom runtime before it's officially supported, they can use a `custom-runtime` plugin:
-```yaml
-plugins:
-  custom-runtime:
-    base_image: "python:3.12-slim"
-    packages: ["git", "my-agent-cli"]
-    cmd: "my-agent-cli"
-```
-
-### Q5: Gateway user in Dockerfile?
-
-The generated Dockerfile creates both users: `agent` (unprivileged, runs bridge + agent) and `gateway` (system user, runs proxy). The iptables rule exempts `gateway` uid so the proxy's own outbound connections aren't redirected.
-
----
-
-## UX & DX Improvements
-
-### First-Run Experience
-
-```bash
-$ agent-sandbox init
-
-? Runtime: (use arrows)
-  ❯ codex (OpenAI Codex CLI)
-    claude-code (Anthropic Claude Code)
-    pi (Pi Coding Agent)
-    aider (Aider - AI pair programming)
-
-? Enable GitHub access? (Y/n) Y
-? GitHub PAT: (paste or press Enter to use gh CLI)
-  ✓ Detected gh auth token
-
-? Enable Docker for agent? (y/N) n
-
-? Messaging channel: (use arrows)
-  ❯ telegram
-    slack
-    none (exec only)
-
-✓ Created agent.yaml
-✓ Created .env (with detected credentials)
-✓ Created home/ directory
-
-Next: agent-sandbox up
-```
-
-Interactive init with sensible detection:
-- Auto-detect `gh auth token` for GitHub PAT
-- Auto-detect existing `.env` files
-- Suggest plugins based on runtime choice (codex → openai plugin auto-suggested)
-
-### Live Status During `up`
-
-```bash
-$ agent-sandbox up
-
-⠋ Building agent image...
-  ├─ [1/8] Base image: node:22-slim
-  ├─ [2/8] System packages: git, curl, iptables, ripgrep
-  ├─ [3/8] Runtime: @openai/codex
-  ├─ [4/8] Bridge runtime
-  ├─ [5/8] Channel: telegram
-  ├─ [6/8] Home override (3 files)
-  ├─ [7/8] Gateway binary
-  └─ [8/8] Entrypoint
-
-✓ Image built (42s)
-✓ Container started
-✓ Gateway healthy (egress: github, openai, telegram)
-✓ Bridge connected
-✓ Telegram bot @coder_bot online
-
-  Agent: coder (codex)
-  Exec:  agent-sandbox exec
-  Logs:  agent-sandbox logs
-  Stop:  agent-sandbox down
-```
-
-### Health Dashboard
-
-```bash
-$ agent-sandbox status
-
-┌─────────────────────────────────────────────────────┐
-│ coder (codex)                          RUNNING  │
-├─────────────────────────────────────────────────────┤
-│ Uptime:     2h 34m                              │
-│ Gateway:    ✓ healthy (247 requests proxied)    │
-│ Bridge:     ✓ connected                         │
-│ Telegram:   ✓ @coder_bot (last msg: 5m ago)     │
-│ Memory:     312MB / 4GB                         │
-│ Home:       persistent (1.2GB used)             │
-└─────────────────────────────────────────────────────┘
-```
-
-### Helpful Error Messages
-
-```bash
-# Bad: "connection refused"
-# Good:
-$ agent-sandbox up
-
-✗ Plugin 'github' failed: token is invalid or expired
-
-  Your GitHub PAT might have expired. To fix:
-    1. Generate a new token: https://github.com/settings/tokens
-    2. Update .env: GITHUB_PAT=ghp_your_new_token
-    3. Run: agent-sandbox up
-
-  Or use gh CLI: gh auth refresh && agent-sandbox up
-```
-
-```bash
-# Bad: "port already in use"
-# Good:
-$ agent-sandbox up
-
-✗ Port 1455 is already in use (by process: agent-sandbox [pid 12345])
-
-  Another agent-sandbox instance is running.
-  Run: agent-sandbox down   (stop existing)
-  Or:  agent-sandbox up --port 1456   (use different port)
-```
-
-### Plugin Discovery
-
-```bash
-$ agent-sandbox plugins
-
-Available plugins:
-
-  Credentials:
-    github        GitHub PAT injection (api.github.com)
-    openai        OpenAI API key injection (api.openai.com)
-    anthropic     Anthropic API key injection (api.anthropic.com)
-    notion        Notion OAuth (api.notion.com) [requires auth flow]
-    custom-api    Custom API key for any host
-
-  Channels:
-    telegram      Telegram bot (long-poll)
-    slack         Slack bot (socket mode)
-
-  Features:
-    docker        Docker-in-Docker for agent development
-
-  Runtimes:
-    codex         OpenAI Codex CLI
-    claude-code   Anthropic Claude Code
-    pi            Pi Coding Agent
-    aider         Aider AI pair programming
-
-$ agent-sandbox plugins info github
-
-  github — GitHub PAT injection
-
-  Injects Authorization header for all requests to github.com.
-  Agent sees a dummy GH_TOKEN; real PAT never enters the container.
-
-  Config:
-    token: (required) GitHub Personal Access Token
-             Supports: ${GITHUB_PAT} env var reference
-             Auto-detect: gh auth token
-
-  Egress rules added:
-    github.com, *.github.com, *.githubusercontent.com → MITM + inject
-
-  Example:
-    plugins:
-      github:
-        token: "${GITHUB_PAT}"
-```
-
-### Dry Run / Preview
-
-```bash
-$ agent-sandbox up --dry-run
-
-Would generate:
-  .build/Dockerfile          (multi-stage, 2 stages)
-  .build/docker-compose.yml  (1 service + 1 sidecar)
-  .build/gateway-config.yaml (3 egress rules)
-
-Egress rules:
-  1. github.com, *.github.com → MITM (github PAT)
-  2. api.openai.com → MITM (openai API key)
-  3. api.telegram.org → MITM (telegram URL rewrite)
-  4. * → passthrough (allow all)
-
-Estimated build time: ~60s (first build), ~5s (cached)
-```
-
-### Config Validation with Suggestions
-
-```bash
-$ agent-sandbox validate
-
-⚠ Warning: runtime 'codex' typically needs 'openai' plugin for API access.
-  Add to agent.yaml:
-    plugins:
-      openai:
-        api_key: "${OPENAI_API_KEY}"
-
-✓ Config valid (1 warning)
-```
-
-### Developer Experience (Plugin Authors)
-
-#### Plugin Scaffold
-
-```bash
-$ agent-sandbox plugin new my-corp-api
-
-Created plugins/my-corp-api/:
-  go.mod
-  plugin.go       ← implement Contribute() and NewInjector()
-  plugin_test.go  ← test template
-  README.md
-
-Next steps:
-  1. Edit plugin.go — define config schema and contributions
-  2. Run: cd plugins/my-corp-api && go test ./...
-  3. Add to cmd/agent-sandbox/plugins.go registry
-  4. Rebuild: go build ./cmd/agent-sandbox
-```
-
-#### Plugin Testing
-
-```go
-// plugins/github/plugin_test.go
-func TestGithubContribute(t *testing.T) {
-    p := New()
-    contrib, err := p.Contribute(sdk.ContributeContext{
-        AgentName: "test",
-        Config:    map[string]any{"token": "ghp_test123"},
-    })
-    require.NoError(t, err)
-    assert.Len(t, contrib.EgressRules, 1)
-    assert.Equal(t, []string{"github.com", "*.github.com"}, contrib.EgressRules[0].Hosts)
-}
-
-func TestGithubInjector(t *testing.T) {
-    p := New()
-    injector, err := p.NewInjector(map[string]any{"token": "ghp_real"})
-    require.NoError(t, err)
-
-    req := httptest.NewRequest("GET", "https://api.github.com/repos", nil)
-    err = injector.InjectCredentials(req)
-    require.NoError(t, err)
-    assert.Equal(t, "token ghp_real", req.Header.Get("Authorization"))
-}
-```
-
-#### Integration Test Helper
-
-```go
-// sdk/testing/sandbox.go
-func NewTestSandbox(t *testing.T, plugins ...sdk.Plugin) *TestSandbox {
-    // Spins up a real container with gateway + bridge
-    // Returns handle for exec, HTTP requests, log inspection
-}
-
-// Usage:
-func TestFullFlow(t *testing.T) {
-    sb := sdktest.NewTestSandbox(t, github.New(), telegram.New())
-    defer sb.Cleanup()
-
-    // Verify egress works
-    resp := sb.HTTPGet("https://api.github.com/user")
-    assert.Equal(t, 200, resp.StatusCode)
-
-    // Verify credential injection
-    assert.Contains(t, sb.GatewayLogs(), "injected Authorization header")
-}
-```
-
-#### Local Dev Loop
-
-```bash
-# Fast iteration: rebuild only what changed
-$ agent-sandbox up --no-cache          # full rebuild
-$ agent-sandbox up                     # uses Docker layer cache (fast)
-$ agent-sandbox rebuild                # rebuild image without restart
-$ agent-sandbox restart                # restart container (keep image)
-
-# Debug mode: verbose gateway + bridge logs
-$ agent-sandbox up --debug
-
-# Inspect generated artifacts without building
-$ agent-sandbox generate               # write .build/ without docker compose up
-```
-
-### Progressive Disclosure
-
-Minimal config (works out of the box):
-```yaml
-name: coder
-runtime: codex
-```
-
-Add credentials when needed:
-```yaml
-name: coder
-runtime: codex
-plugins:
-  github:
-    token: "${GITHUB_PAT}"
-```
-
-Add channels when ready:
-```yaml
-name: coder
-runtime: codex
-plugins:
-  github:
-    token: "${GITHUB_PAT}"
-  telegram:
-    bot_token: "${TELEGRAM_BOT_TOKEN}"
-    allowed_users: ["me"]
-```
-
-Full power when needed:
-```yaml
-name: coder
-runtime: codex
-plugins:
-  github: { token: "${GITHUB_PAT}" }
-  openai: { api_key: "${OPENAI_API_KEY}" }
-  docker: true
-  telegram: { bot_token: "${BOT_TOKEN}", allowed_users: ["me"] }
-packages: [ripgrep, fd-find]
-home:
-  persist: true
-  override: ./home/
-```
+| Deploy | generate → compose up | `up` |
+| Egress default | Deny | Allow all |
+| Gateway | Sidecar container | Inside agent container |
 
 ---
 
 ## Open Questions
 
-1. **Plugin versioning** — How to handle breaking changes in plugin interface? SDK version pinning?
-2. **Custom egress restrictions** — Some users may want default-deny. Add `egress: deny-all` option?
-3. **Plugin marketplace** — External plugins beyond built-in? Go module proxy? Git clone?
-4. **Resource limits** — CPU/memory limits per agent? Per-agent or fleet-level?
-5. **Health checks** — How to detect agent crash vs idle? Bridge responsibility?
-6. **Logging** — Structured logs? Log aggregation for multi-agent?
-7. **Auth flow** — How does user authenticate agent runtimes (codex device flow, claude login)?
+1. **Plugin versioning** — SDK breaking changes? Version pinning?
+2. **Custom egress restrictions** — Option for default-deny mode?
+3. **External plugins** — Beyond built-in? Go module proxy?
+4. **Resource limits** — CPU/memory per agent? Configurable?
+5. **Health checks** — Detect agent crash vs idle?
+6. **Auth flow** — Codex device flow, claude login — how to handle first-time auth?
+
+---
+
+## Architecture Review: Maintainability
+
+### Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| CLI binary size (go:embed gateway + bridge) | ~50-80MB binary | Accept it. Single binary distribution is worth the size. Gateway source is small (~500KB). Bridge is ~2MB with node_modules excluded (npm install happens in Docker). |
+| SDK interface changes break all plugins | All plugins need update | Semantic versioning on sdk module. Keep interface minimal. Add new capabilities via Contributions fields (additive), not interface methods. |
+| Multi-stage build adds time | First build ~60s (Go compile) | Docker layer cache. Gateway stage rarely changes. Subsequent builds ~5s. |
+| Two languages (Go + TypeScript) | Higher maintenance burden | Clear boundary: Go = build-time + network proxy. TypeScript = runtime messaging. No overlap. Each can be maintained independently. |
+| Contributions struct grows (kitchen sink) | Complex merge logic | Keep fields flat and optional. Nil/empty = not contributed. Merge is simple: concatenate lists, error on conflicts (e.g., two BaseImages). |
+| Gateway fix requires all containers rebuild | Slow rollout | `agent-sandbox rebuild` rebuilds image without config change. Docker cache means only gateway stage rebuilds (~10s). |
+| Bridge overhead when no channels | Unnecessary process | Bridge in no-channel mode is trivial: spawn agent, wait. ~5MB RSS. Acceptable for architectural simplicity. |
+
+### Interface Stability Strategy
+
+```go
+// sdk v1 — keep forever
+type Plugin interface {
+    Name() string
+    ConfigSchema() ConfigSchema
+    Contribute(ctx ContributeContext) (*Contributions, error)
+    NewInjector(cfg map[string]any) (Injector, error)
+}
+
+// New capabilities → new Contributions fields (non-breaking)
+type Contributions struct {
+    BaseImage string  // v1.0
+    Packages  Packages // v1.0
+    // ...
+    HealthCheck *HealthCheck // v1.3 — added later, nil = not used
+}
+```
+
+Rule: never remove or rename fields. Only add. Plugins compiled against sdk v1.0 work with sdk v1.x.
+
+### Upgrade Path
+
+| Change | User action |
+|--------|-------------|
+| New plugin available | `agent-sandbox upgrade` (new CLI binary) |
+| Plugin bug fix | `agent-sandbox upgrade` → `agent-sandbox rebuild` |
+| Gateway security fix | `agent-sandbox upgrade` → `agent-sandbox rebuild` |
+| Bridge fix | `agent-sandbox upgrade` → `agent-sandbox rebuild` |
+| Config schema change | Edit agent.yaml → `agent-sandbox up` |
+| New runtime | `agent-sandbox upgrade` (new plugin in registry) |
+
+All upgrades are: upgrade CLI → rebuild containers. No migration scripts. No state to migrate (config is declarative, state is in volumes).
+
+### Scaling Considerations
+
+| Dimension | Current design | If it becomes a problem |
+|-----------|---------------|-------------------------|
+| Number of plugins | ~10-15 built-in | Fine. Go compile is fast. Binary stays <100MB. |
+| Number of agents | 1-5 per host | Docker Compose handles this. Beyond 10 → consider k8s. |
+| Plugin complexity | Simple Contribute() | If plugins need lifecycle hooks (start/stop/health), add optional interface. |
+| External plugins | Not supported | Add go-plugin (HashiCorp) runtime discovery later. |
+| Multi-host | Not supported | Out of scope. Use k8s + Helm chart if needed. |
+
+### What NOT to Build (YAGNI)
+
+- Plugin marketplace / registry (until >20 community plugins exist)
+- Hot reload (rebuild is fast enough with Docker cache)
+- Web UI dashboard (CLI + Telegram is sufficient)
+- Multi-host orchestration (use k8s)
+- Plugin dependency resolution (keep plugins independent)
+- Config migration tool (config is simple YAML, manual edit is fine)
