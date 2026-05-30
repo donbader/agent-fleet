@@ -9,69 +9,81 @@ my-fleet/                    ← your repo
   agents/
     coder/
       agent.yaml
-      home-override/           ← read-only config overlays
+      Dockerfile             ← custom base image (optional, Strategy 3)
+      home-override/         ← config files to bake into image (optional, Strategy 3)
         .gitconfig
-      Dockerfile             ← custom base image (optional)
     reviewer/
       agent.yaml
 ```
 
-## Home Directory
+## Home Directory Strategies
 
-### Default: Named Volume + home-override (Strategy 1)
+The agent's home directory (`/home/agent`) can be set up in different ways depending on your needs.
 
-By default, `/home/agent` is a Docker named volume (persists across container restarts). On first run, Docker populates the volume from the image contents.
+### Strategy 1.1: Named Volume (default)
 
-To pre-configure files in the home directory, use a custom Dockerfile template (`user_base_image_stage`) — see the "Custom Base Image" section below.
+The provider's render.sh outputs a named volume for the home directory. Docker populates it from the image on first run. No configuration needed.
 
-**WORKDIR:** `/home/agent/workspace`
+```yaml
+# agent.yaml — nothing special, just pick a runtime
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+egress:
+  - allow-all
+```
 
-### Alternative: Bind Mount (Strategy 2)
+**Generated compose (by provider's render.sh):**
+```yaml
+volumes:
+  - coder-home:/home/agent
+```
 
-If you want to version-control the entire home directory with GitHub, use the `volumes` field in agent.yaml:
+**Behavior:**
+- Home directory persists across container restarts
+- Agent can write freely
+- Rebuild image doesn't affect existing volume data
+
+### Strategy 1.2: Bind Mount
+
+Use the `volumes` field in agent.yaml to bind-mount a host directory as the home. Good for version-controlling the home directory with git.
 
 ```yaml
 # agent.yaml
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+egress:
+  - allow-all
 volumes:
-  - "./home:/home/agent"
+  - "./agents/coder/home:/home/agent"
 ```
 
-```yaml
-# Generated compose:
-services:
-  coder:
-    volumes:
-      - ./agents/coder/home-override:/home/agent
-```
+Note: the path is relative to the compose file (fleet root), not relative to agent.yaml.
 
-**WORKDIR:** `/home/agent`
-
-**When to use:**
-- You want the agent's entire home directory in version control
-- You want to see/edit agent files from the host
-- You're sharing agent config across machines via git
+**Behavior:**
+- Agent writes are visible on host
+- Changes on host are immediately visible in container
+- Version-control the home directory with git
 
 **Tradeoffs:**
 - Permission issues on Linux (container UID vs host UID)
-- Agent writes are visible on host (can be noisy in git)
 - Need `.gitignore` for transient files (node_modules, .cache, etc.)
 
-## Custom Base Image (user_base_image_stage)
+### Strategy 3: Named Volume + Custom Base Template
 
-Add extra tools to your agent container without modifying the runtime:
+Combine a named volume with a custom Dockerfile template to pre-install tools and bake config files into the image. Docker populates the volume from the image on first run.
 
 ```yaml
-# agents/coder/agent.yaml
+# agent.yaml
 runtime:
-  provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge"
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
   options:
     user_base_image_stage: "./Dockerfile"
+egress:
+  - allow-all
 ```
 
-Your Dockerfile is a **template** — the provider injects it into its own Dockerfile and substitutes magic variables:
-
 ```dockerfile
-# agents/coder/Dockerfile (partial template — not a standalone Dockerfile)
+# agents/coder/Dockerfile (partial template — not standalone)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     fd-find \
@@ -80,6 +92,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY home-override/.gitconfig ${AGENT_HOME}/.gitconfig
 ```
+
+**Behavior:**
+- Extra tools available in the container
+- Config files baked into image → populate volume on first run
+- Rebuild image + delete volume → fresh home with updated config
+
+## Custom Base Image (user_base_image_stage)
+
+Your Dockerfile is a **template** — the provider reads it, substitutes magic variables, and injects it into the runtime's Dockerfile.
 
 ### Provider Magic Variables
 
@@ -90,7 +111,7 @@ Each provider defines variables for things it controls:
 | `${AGENT_HOME}` | Agent's home directory | `/home/agent` |
 | `${AGENT_USER}` | Agent's OS username | `agent` |
 
-Providers may define additional variables in their own docs. Users should not hardcode internal paths — use variables instead.
+Providers may define additional variables in their own docs. Use variables instead of hardcoding internal paths.
 
 ### How It Works
 
@@ -103,7 +124,7 @@ You don't need to include runtime setup (bridge, iptables, entrypoint) — the p
 
 ## Putting It Together
 
-A typical setup for a team:
+A typical setup:
 
 ```
 my-team-agents/              ← your repo (not agent-fleet)
@@ -114,13 +135,11 @@ my-team-agents/              ← your repo (not agent-fleet)
 └── agents/
     ├── coder/
     │   ├── agent.yaml
-    │   ├── Dockerfile       ← extra tools (ripgrep, etc.)
+    │   ├── Dockerfile       ← extra tools (Strategy 3)
     │   └── home-override/
-    │       └── .gitconfig   ← read-only override
+    │       └── .gitconfig
     └── reviewer/
-        ├── agent.yaml
-        └── home-override/
-            └── .gitconfig
+        └── agent.yaml       ← Strategy 1.1 (no customization)
 ```
 
 Run:
