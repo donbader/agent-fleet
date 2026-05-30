@@ -58,7 +58,8 @@ cd my-fleet
 # 3. Create .env with your secrets
 
 # Deploy
-agent-fleet up
+agent-fleet generate
+agent-fleet compose up -d --build
 ```
 
 ## Configuration
