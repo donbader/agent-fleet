@@ -4,9 +4,10 @@
 # No external dependencies required.
 #
 # Supported options:
-#   agent_provider  - runtime provider for the agent process (default: codex)
-#   user_base       - path to user's partial Dockerfile (template injection)
-#   channels        - array of channel configs (provider + options)
+#   agent_provider       - runtime provider for the agent process (default: codex)
+#   user_base            - path to user's partial Dockerfile (template injection)
+#   persist_auth_token   - persist agent auth token across restarts (default: true)
+#   channels             - array of channel configs (provider + options)
 
 set -e
 
@@ -20,6 +21,9 @@ AGENT_CMD=$(basename "$AGENT_PROVIDER")
 
 # User base template (optional)
 USER_BASE=$(agent-fleet tools ctx .options.user_base --default "")
+
+# Persist auth token (default: true)
+PERSIST_AUTH=$(agent-fleet tools ctx .options.persist_auth_token --default "true")
 
 # Extract telegram channel config using array indexing
 ALLOWED_USERS=$(agent-fleet tools ctx .options.channels.0.options.allowed_users --default "[]")
@@ -50,14 +54,20 @@ if [ -n "$USER_BASE" ]; then
     DOCKERFILE="$GENERATED"
 fi
 
+# Build volumes section
+VOLUMES=""
+if [ "$PERSIST_AUTH" = "true" ]; then
+    VOLUMES="
+volumes:
+  - ${NAME}-codex-auth:/home/agent/.codex"
+fi
+
 cat <<EOF
 build:
   context: .
   dockerfile: ${DOCKERFILE}
 cap_add:
-  - NET_ADMIN
-volumes:
-  - ${NAME}-home:/home/agent
+  - NET_ADMIN${VOLUMES}
 environment:
   AGENT_NAME: "${NAME}"
   GATEWAY_HOST: "${GATEWAY_HOST}"

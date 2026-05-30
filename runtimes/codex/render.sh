@@ -15,6 +15,15 @@ NAME=$(agent-fleet tools ctx .name)
 GATEWAY_HOST=$(agent-fleet tools ctx .gateway_host)
 GATEWAY_PORT=$(agent-fleet tools ctx .gateway_port)
 AUTH_PORT=$(agent-fleet tools ctx .options.auth_port --default 1455)
+PERSIST_AUTH=$(agent-fleet tools ctx .options.persist_auth_token --default "true")
+
+# Build volumes list (no home volume — ephemeral by default)
+VOLUMES=""
+if [ "$PERSIST_AUTH" = "true" ]; then
+    VOLUMES="
+volumes:
+  - ${NAME}-codex-auth:/home/agent/.codex"
+fi
 
 cat <<EOF
 build:
@@ -25,10 +34,7 @@ cap_add:
 sysctls:
   - net.ipv4.conf.all.route_localnet=1
 ports:
-  - "${AUTH_PORT}:${AUTH_PORT}"
-volumes:
-  - ${NAME}-home:/home/agent
-  - ${NAME}-codex-auth:/home/agent/.codex
+  - "${AUTH_PORT}:${AUTH_PORT}"${VOLUMES}
 environment:
   AGENT_NAME: "${NAME}"
   GATEWAY_HOST: "${GATEWAY_HOST}"

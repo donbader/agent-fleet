@@ -4,7 +4,29 @@ Demonstrates three approaches to managing the agent's home directory. Each agent
 
 ## Agents
 
-### named-volume (simplest)
+### ephemeral (default)
+
+No home volume — container starts fresh every time. Only the auth token persists (via `persist_auth_token: true`, the default).
+
+```yaml
+# agents/named-volume/agent.yaml — this is actually ephemeral by default
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+egress:
+  - allow-all
+```
+
+**How it works:**
+- Provider outputs only an auth volume (`coder-codex-auth:/home/agent/.codex`)
+- Home directory is fresh on every restart
+- Auth token persists so you don't need to re-login
+- Set `persist_auth_token: false` for fully ephemeral (re-login every time)
+
+**Best for:** Clean sandbox environments where you want no state leakage between runs.
+
+---
+
+### named-volume (persistent home)
 
 The runtime provider outputs a named volume for `/home/agent`. Docker populates it from the image on first run. Both the **codex** and **channels-bridge** providers do this by default — no home directory configuration needed.
 

@@ -15,6 +15,20 @@ my-fleet/                    ← your repo
 
 ## What You Can Customize
 
+### persist_auth_token
+
+Controls whether the agent's auth token persists across container restarts. Default: `true`.
+
+```yaml
+# agent.yaml
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+  options:
+    persist_auth_token: false  # fully ephemeral, re-login every restart
+```
+
+By default, containers are **ephemeral** (home directory resets on restart) but auth tokens persist so you don't need to re-login. Set to `false` for a fully clean sandbox every time.
+
 ### volumes
 
 Mount host directories or override provider volumes.
