@@ -99,7 +99,6 @@ Each sub-struct is nil if the plugin doesn't contribute to that concern.
 // What goes into the Dockerfile
 type ImageContribution struct {
     BaseImage string       // only one plugin may set (conflict = error)
-    Packages  Packages     // apt, npm, pip — merged across plugins
     Files     []File       // COPY into image (embed.FS source + dest path)
     Commands  []string     // RUN commands (no FROM/ENTRYPOINT allowed)
 }
@@ -749,12 +748,13 @@ type Plugin interface {
     NewInjector(cfg map[string]any) (Injector, error)
 }
 
-// New capabilities → new Contributions fields (non-breaking)
-type Contributions struct {
+// New capabilities → new fields (non-breaking)
+type ImageContribution struct {
     BaseImage string  // v1.0
-    Packages  Packages // v1.0
+    Files     []File  // v1.0
+    Commands  []string // v1.0
     // ...
-    HealthCheck *HealthCheck // v1.3 — added later, nil = not used
+    CacheFrom []string // v1.3 — added later, nil = not used
 }
 ```
 
