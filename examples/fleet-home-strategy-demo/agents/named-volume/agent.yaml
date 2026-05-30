@@ -1,12 +1,16 @@
 # yaml-language-server: $schema=../../../schemas/agent.schema.json
 #
-# Strategy 1.1: Named volume (default)
-# - Provider outputs home volume in render.sh
-# - No user customization needed
-# - Simplest setup
+# Strategy: Named Volume (persistent home)
+# - User declares a named volume for /home/agent
+# - Home directory persists across container restarts
+# - Rebuild image doesn't affect existing volume data
+# - Delete volume to reset: agent-fleet compose down -v
 
 runtime:
   provider: "github.com/donbader/agent-fleet/runtimes/codex"
 
 egress:
   - allow-all
+
+volumes:
+  - "named-volume-home:/home/agent"

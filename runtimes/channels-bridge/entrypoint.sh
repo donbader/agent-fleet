@@ -16,5 +16,20 @@ if command -v iptables >/dev/null 2>&1; then
     fi
 fi
 
+# Run init scripts (specified via INIT_SCRIPTS env var, comma-separated paths)
+if [ -n "$INIT_SCRIPTS" ]; then
+    IFS=',' read -r SCRIPTS <<EOF
+$INIT_SCRIPTS
+EOF
+    for script in $SCRIPTS; do
+        if [ -x "$script" ]; then
+            echo "[channels-bridge] running init script: $script"
+            "$script"
+        else
+            echo "[channels-bridge] WARNING: init script not found or not executable: $script"
+        fi
+    done
+fi
+
 # Launch bridge
 exec tsx /bridge/src/index.ts

@@ -203,6 +203,14 @@ func (g *Generator) agentService(name string, agent *config.AgentConfig) (*Servi
 		svc.Volumes = appendUnique(svc.Volumes, agent.Volumes)
 	}
 
+	// Security: remove banned bind mounts (e.g., bind mount to /home/agent)
+	if sanitized, removed := SanitizeVolumes(svc.Volumes); len(removed) > 0 {
+		for _, vol := range removed {
+			fmt.Fprintf(os.Stderr, "⚠️  [%s] Removed banned bind mount: %s (bind mounts to /home/agent are not allowed)\n", name, vol)
+		}
+		svc.Volumes = sanitized
+	}
+
 	// Merge user-declared ports from agent.yaml with provider-declared ports.
 	if len(agent.Ports) > 0 {
 		svc.Ports = appendUnique(svc.Ports, agent.Ports)

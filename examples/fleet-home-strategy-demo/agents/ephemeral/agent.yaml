@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/donbader/agent-fleet/main/schemas/agent.schema.json
+
+# Ephemeral strategy: no persistent home, only auth token persists.
+# Container starts fresh every restart — clean sandbox, no state leakage.
+
+runtime:
+  provider: "github.com/donbader/agent-fleet/runtimes/codex"
+
+egress:
+  - allow-all

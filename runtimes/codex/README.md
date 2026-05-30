@@ -58,6 +58,8 @@ Alternatively, use the Docker extension's right-click → **Attach Visual Studio
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `auth_port` | number | `1455` | Host port for codex auth device flow |
+| `persist_auth_token` | boolean | `true` | Persist auth token across container restarts |
+| `init_scripts` | string[] | `[]` | Scripts to run on every container start (comma-separated in env) |
 | `user_base` | string | `""` | Path to partial Dockerfile template (relative to agent dir) |
 
 ## user_base
@@ -78,9 +80,16 @@ COPY --chown=${AGENT_USER}:${AGENT_USER} home-override/ ${AGENT_HOME}/
 
 ## Volumes
 
-The runtime outputs two named volumes:
-- `{name}-home:/home/agent` — persistent home directory
-- `{name}-codex-auth:/home/agent/.codex` — codex auth token (persists across home resets)
+By default, the container is **ephemeral** — home directory resets on restart.
+
+The only volume output by default is the auth token (when `persist_auth_token: true`):
+- `{name}-codex-auth:/home/agent/.codex` — codex auth token
+
+To persist the full home directory, add a volume in agent.yaml:
+```yaml
+volumes:
+  - "coder-home:/home/agent"
+```
 
 ## Environment Variables
 

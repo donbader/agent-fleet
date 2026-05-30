@@ -1,14 +1,19 @@
 # yaml-language-server: $schema=../../../schemas/agent.schema.json
 #
-# Strategy 3: Named volume + customized user base template
-# - Provider outputs home volume in render.sh (same as 1.1)
-# - User provides a partial Dockerfile for extra deps + home-override
-# - Docker populates the volume from image on first run
+# Strategy: Home Overriding (git-tracked configs + persistent home)
+# - Named volume for persistent home (runtime state survives restarts)
+# - init_scripts runs on every start to override home with tracked configs
+# - Agent PRs config changes → merge → rebuild → next restart picks them up
 
 runtime:
   provider: "github.com/donbader/agent-fleet/runtimes/codex"
   options:
     user_base: "./Dockerfile"
+    init_scripts:
+      - "/scripts/override-home.sh"
 
 egress:
   - allow-all
+
+volumes:
+  - "custom-base-home:/home/agent"

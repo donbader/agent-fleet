@@ -4,8 +4,8 @@ fleet:
   name: home-strategy-demo
 
 agents:
+  - ephemeral
   - named-volume
-  - bind-mount
   - custom-base
 
 egress-presets:
