@@ -2,187 +2,63 @@
 
 Opinionated agent sandbox orchestrator. Deploy AI coding agents with enforced security boundaries, messaging channels, and fleet management.
 
-## What It Does
+## Features
 
-- **Sandbox isolation** — Every agent runs inside a Docker container with transparent egress proxy and default-deny rules
-- **Channel abstraction** — Connect agents to Telegram (or other platforms) via ACP (Agent Client Protocol)
-- **Fleet management** — Deploy and manage multiple agents from a single configuration
-- **Credential injection** — Secrets never enter the sandbox; egress rule providers inject them at the network boundary
-- **Docker API Proxy** — Optionally allow agents to spin up containers via a policy-enforced egress rule
+- **Sandbox isolation** — Docker containers with transparent egress proxy and default-deny rules
+- **Credential injection** — Secrets never enter the sandbox; injected at the network boundary via MITM
+- **Channel abstraction** — Connect agents to Telegram (or other platforms) via ACP protocol
+- **Fleet management** — Multiple agents from a single configuration
+- **Composable egress** — Mix and match egress presets per agent
 
-## Installation
+## Install
 
-**One-liner (public repo):**
 ```bash
 curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | sh
-```
-
-**Private repo (uses `gh` CLI auth automatically):**
-```bash
-# If you're logged in with gh CLI, it just works:
-curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | sh
-
-# Or explicitly pass a token:
-curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | GITHUB_TOKEN=$GITHUB_TOKEN sh
-```
-
-**Custom install directory:**
-```bash
-curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | INSTALL_DIR=~/.local/bin sh
-```
-
-**Go install:**
-```bash
-go install github.com/donbader/agent-fleet/cmd/agent-fleet@latest
-```
-
-**Upgrade to latest:**
-```bash
-agent-fleet upgrade
-# Uses gh CLI auth automatically. Falls back to GITHUB_TOKEN if gh not available.
 ```
 
 ## Quick Start
 
 ```bash
-# Install
-curl -sSL https://raw.githubusercontent.com/donbader/agent-fleet/main/install.sh | sh
-
-# Initialize a fleet (scaffolds fleet.yaml + agents/ folder)
-agent-fleet init my-fleet
-cd my-fleet
-
-# Configure
-# 1. Edit fleet.yaml — set egress-presets
-# 2. Edit agents/coder/agent.yaml — set runtime, channel, egress refs
-# 3. Create .env with your secrets
-
-# Deploy
-agent-fleet up
+agent-fleet init my-fleet && cd my-fleet
+# Edit fleet.yaml + agents/coder/agent.yaml + .env
+agent-fleet generate
+agent-fleet compose up -d --build
 ```
 
-## Configuration
+See [Getting Started](docs/getting-started.md) for the full walkthrough.
 
-A fleet is a directory with `fleet.yaml` + per-agent folders:
+## Documentation
 
-```
-my-fleet/
-  fleet.yaml              # shared egress-presets + agent list
-  .env                    # secrets (never committed)
-  agents/
-    coder/
-      agent.yaml          # runtime, egress refs, channel
-```
+| Doc | Description |
+|-----|-------------|
+| [Getting Started](docs/getting-started.md) | Full setup and daily workflow guide |
+| [Configuration](docs/configuration.md) | fleet.yaml and agent.yaml reference |
+| [Customization](docs/customization.md) | Home directory strategies and Dockerfile templates |
+| [Architecture](docs/architecture.md) | System design and component overview |
+| [Security Model](docs/security-model.md) | Egress rules, MITM, credential injection |
+| [Bridge Protocol](docs/bridge-protocol.md) | ACP protocol and channel adapters |
+| [Docker API Proxy](docs/docker-api-proxy.md) | Controlled container spawning [PLANNED] |
+| [ADRs](docs/adr/) | Architecture decision records |
 
-**fleet.yaml** — shared config:
+## Supported Runtimes
 
-```yaml
-fleet:
-  name: my-agent
-
-agents:
-  - coder
-
-egress-presets:
-  telegram-bot-1:
-    - host: ["api.telegram.org"]
-      provider: "github.com/donbader/agent-fleet/egress-rules/telegram-bot"
-      options:
-        token: "${TELEGRAM_BOT_TOKEN}"
-
-  main:
-    - host: ["api.github.com", "github.com"]
-      provider: "github.com/donbader/agent-fleet/egress-rules/github-pat"
-      options:
-        token: "${GITHUB_PAT_TOKEN}"
-    - host: ["*"]
-```
-
-**agents/coder/agent.yaml** — per-agent config:
-
-```yaml
-egress: [telegram-bot-1, main]
-
-runtime:
-  provider: "github.com/donbader/agent-fleet/runtimes/channels-bridge"
-  options:
-    agent_provider: "github.com/donbader/agent-fleet/runtimes/codex"
-    channels:
-      - provider: "github.com/donbader/agent-fleet/channel-providers/telegram"
-        options:
-          allowed_users: ["@myusername"]
-
-env:
-  GH_TOKEN: proxy_dummy_token
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  agent-fleet CLI                                                 │
-│  - Reads fleet.yaml                                             │
-│  - Generates Docker Compose                                     │
-│  - Wires channels and egress presets                             │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-          ┌────────────────────┼────────────────────┐
-          │                    │                    │
-   ┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
-   │ Agent: coder│     │ Agent: ops  │     │ Agent: ...  │
-   │             │     │             │     │             │
-   │ ┌─────────┐│     │ ┌─────────┐│     │             │
-   │ │ Channel ││     │ │ Channel ││     │             │
-   │ │(ACP↔TG) ││     │ │(ACP↔TG) ││     │             │
-   │ └─────────┘│     │ └─────────┘│     │             │
-   │             │     │             │     │             │
-   │ Docker     │     │ Docker     │     │ Docker     │
-   │ + Proxy    │     │ + Proxy    │     │ + Proxy    │
-   └──────┬──────┘     └──────┬──────┘     └─────────────┘
-          │                    │
-          └────────┬───────────┘
-                   │ (shared egress presets)
-          ┌────────▼────────┐
-          │  Egress Proxy    │
-          │  (transparent)   │
-          └─────────────────┘
-```
-
-## Supported Agents
-
-| Runtime | Protocol | Status |
-|---------|----------|--------|
-| Codex | ACP (native) | ✅ Primary |
-| Claude Code | ACP (via adapter) | 🔜 Planned |
-| Pi | Pi RPC (via adapter) | 🔜 Planned |
+| Runtime | Status |
+|---------|--------|
+| [Codex](runtimes/codex/) | ✅ Primary |
+| Claude Code | 🔜 Planned |
 
 ## Supported Channels
 
 | Platform | Status |
 |----------|--------|
-| Telegram | ✅ Primary |
+| [Telegram](runtimes/channels-bridge/) | ✅ Primary |
 | Slack | 🔜 Planned |
-| Discord | 🔜 Planned |
-
-## Documentation
-
-- [Architecture](docs/architecture.md) — System design and component overview
-- [Configuration](docs/configuration.md) — Full configuration reference
-- [Security Model](docs/security-model.md) — Sandbox isolation and egress control
-- [Bridge Protocol](docs/bridge-protocol.md) — ACP protocol and adapter design
-- [Docker API Proxy](docs/docker-api-proxy.md) — Controlled container spawning
-- [Roadmap](docs/roadmap.md) — Phase plan
 
 ## Development
 
 ```bash
-# Build
 go build ./cmd/agent-fleet
-
-# Test
 go test ./...
-
-# Lint
 golangci-lint run
 ```
 

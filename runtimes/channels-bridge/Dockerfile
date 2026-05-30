@@ -2,7 +2,7 @@
 # Connects Telegram to an agent process via ACP protocol.
 #
 # Self-contained: clone this folder → docker build works.
-# Supports user_base via template injection (see docs/user-base.md).
+# Supports user_base via template injection (see docs/customization.md).
 
 FROM node:22-slim
 

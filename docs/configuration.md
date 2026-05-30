@@ -83,7 +83,7 @@ COPY home-override/.gitconfig ${AGENT_HOME}/.gitconfig
 
 The provider substitutes magic variables and injects your content between its base setup and finalize steps. Build context is set to your agent directory, so `COPY` paths are relative to `agents/<name>/`.
 
-See `docs/user-base.md` for full details.
+See `docs/customization.md` for full details.
 
 Both stages cache independently — user dep changes don't rebuild provider, and vice versa.
 

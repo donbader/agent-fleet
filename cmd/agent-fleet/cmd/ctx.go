@@ -31,7 +31,7 @@ Examples:
 
 func init() {
 	ctxCmd.Flags().StringVar(&ctxDefault, "default", "", "default value if path not found")
-	rootCmd.AddCommand(ctxCmd)
+	toolsCmd.AddCommand(ctxCmd)
 }
 
 func runCtx(cmd *cobra.Command, args []string) error {

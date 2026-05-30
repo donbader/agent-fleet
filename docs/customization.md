@@ -147,7 +147,7 @@ my-team-agents/              ← your repo (not agent-fleet)
 Run:
 ```bash
 cd my-team-agents
-agent-fleet up
+agent-fleet generate && agent-fleet compose up -d --build
 ```
 
 agent-fleet resolves remote providers (runtimes, egress-rules) automatically. Your repo only contains your config and customizations.

@@ -60,6 +60,56 @@ func New(opts Options) *Fleet {
 }
 
 // Up resolves config, generates compose, and starts the fleet.
+// Generate resolves configuration and generates all deployment artifacts:
+// docker-compose.yml and gateway-rules.yaml.
+func (f *Fleet) Generate() error {
+	// 1. Resolve configuration
+	resolved, err := config.Resolve(f.fleetFile)
+	if err != nil {
+		return fmt.Errorf("resolving config: %w", err)
+	}
+
+	// 2. Find repo root (where images/ lives)
+	repoRoot, err := findRepoRoot(f.fleetFile)
+	if err != nil {
+		return fmt.Errorf("finding repo root: %w", err)
+	}
+
+	// 3. Set up provider resolver (clones remote providers to cache)
+	cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "agent-fleet", "providers")
+	resolver := provider.NewResolver(cacheDir)
+
+	// 4. Generate docker-compose.yml
+	gen := compose.New(resolved, repoRoot, resolver)
+	data, err := gen.Generate()
+	if err != nil {
+		return fmt.Errorf("generating compose: %w", err)
+	}
+
+	// 5. Generate gateway rules config
+	rulesData, err := gen.GatewayRulesYAML()
+	if err != nil {
+		return fmt.Errorf("generating gateway rules: %w", err)
+	}
+
+	// 6. Write to output directory
+	if err := os.MkdirAll(f.outputDir, 0755); err != nil {
+		return fmt.Errorf("creating output dir: %w", err)
+	}
+
+	composeFile := filepath.Join(f.outputDir, "docker-compose.yml")
+	if err := os.WriteFile(composeFile, data, 0644); err != nil {
+		return fmt.Errorf("writing compose file: %w", err)
+	}
+
+	rulesFile := filepath.Join(f.outputDir, "gateway-rules.yaml")
+	if err := os.WriteFile(rulesFile, rulesData, 0644); err != nil {
+		return fmt.Errorf("writing gateway rules: %w", err)
+	}
+
+	return nil
+}
+
 func (f *Fleet) Up(ctx context.Context) error {
 	// 1. Resolve configuration
 	resolved, err := config.Resolve(f.fleetFile)
@@ -145,6 +195,27 @@ func (f *Fleet) Status(ctx context.Context) (string, error) {
 
 	projectName := resolved.Fleet.Fleet.Name
 	return f.runner.Ps(ctx, composeFile, projectName)
+}
+
+// Compose runs an arbitrary docker compose command with the fleet's project name and compose file.
+func (f *Fleet) Compose(ctx context.Context, args []string) error {
+	resolved, err := config.Resolve(f.fleetFile)
+	if err != nil {
+		return fmt.Errorf("resolving config: %w", err)
+	}
+
+	composeFile := filepath.Join(f.outputDir, "docker-compose.yml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		return fmt.Errorf("fleet not running (no compose file found) — run 'agent-fleet up' first")
+	}
+
+	projectName := resolved.Fleet.Fleet.Name
+	cmdArgs := append([]string{"compose", "-f", composeFile, "-p", projectName}, args...)
+	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // ComposeFilePath returns the path to the generated docker-compose.yml.

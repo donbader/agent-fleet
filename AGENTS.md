@@ -16,7 +16,7 @@ agent-fleet deploys AI coding agents (Codex, Claude Code, Pi) inside Docker cont
 
 ```
 agent-fleet/
-├── cmd/agent-fleet/          # CLI entrypoint (up, down, status, validate, init, upgrade)
+├── cmd/agent-fleet/          # CLI entrypoint (up, down, status, validate, init, upgrade, compose)
 ├── cmd/gateway/              # Standalone gateway proxy entrypoint
 ├── pkg/
 │   ├── config/               # fleet.yaml + agent.yaml parsing and validation
@@ -137,7 +137,7 @@ golangci-lint run
 
 Tag a new version (`vX.Y.Z`) only when the CLI binary behavior changes:
 - New or changed commands
-- Compose generator logic changes (affects `agent-fleet up` output)
+- Compose generator logic changes (affects `agent-fleet generate` output)
 - Bug fixes in CLI code (`cmd/`, `pkg/compose/`, `pkg/fleet/`, `pkg/selfupdate/`)
 
 Do NOT tag for:
@@ -146,7 +146,7 @@ Do NOT tag for:
 - CI/workflow changes
 - Schema updates (consumed at runtime, not baked into binary)
 
-When in doubt: if a user needs `agent-fleet upgrade` to get the fix, tag. If `agent-fleet up` (which rebuilds images) is enough, don't tag.
+When in doubt: if a user needs `agent-fleet upgrade` to get the fix, tag. If `agent-fleet generate && agent-fleet compose up` (which rebuilds images) is enough, don't tag.
 
 ## What NOT to Do
 

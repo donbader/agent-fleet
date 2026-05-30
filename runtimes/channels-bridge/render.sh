@@ -1,6 +1,6 @@
 #!/bin/bash
 # Render script for the channels-bridge runtime provider.
-# Uses `agent-fleet ctx` to extract values from the render context.
+# Uses `agent-fleet tools ctx` to extract values from the render context.
 # No external dependencies required.
 #
 # Supported options:
@@ -10,19 +10,19 @@
 
 set -e
 
-NAME=$(agent-fleet ctx .name)
-GATEWAY_HOST=$(agent-fleet ctx .gateway_host)
-GATEWAY_PORT=$(agent-fleet ctx .gateway_port)
+NAME=$(agent-fleet tools ctx .name)
+GATEWAY_HOST=$(agent-fleet tools ctx .gateway_host)
+GATEWAY_PORT=$(agent-fleet tools ctx .gateway_port)
 
 # Agent command derived from agent_provider
-AGENT_PROVIDER=$(agent-fleet ctx .options.agent_provider --default "codex")
+AGENT_PROVIDER=$(agent-fleet tools ctx .options.agent_provider --default "codex")
 AGENT_CMD=$(basename "$AGENT_PROVIDER")
 
 # User base template (optional)
-USER_BASE=$(agent-fleet ctx .options.user_base --default "")
+USER_BASE=$(agent-fleet tools ctx .options.user_base --default "")
 
 # Extract telegram channel config using array indexing
-ALLOWED_USERS=$(agent-fleet ctx .options.channels.0.options.allowed_users --default "[]")
+ALLOWED_USERS=$(agent-fleet tools ctx .options.channels.0.options.allowed_users --default "[]")
 if [ "$ALLOWED_USERS" != "[]" ] && [ -n "$ALLOWED_USERS" ]; then
     ALLOWED_USERS=$(echo "$ALLOWED_USERS" | tr -d '[]"' | tr ',' ',')
 fi
@@ -30,11 +30,11 @@ fi
 # Generate Dockerfile with optional user_base injection
 DOCKERFILE="Dockerfile"
 if [ -n "$USER_BASE" ]; then
-    AGENT_DIR=$(agent-fleet ctx .agent_dir)
+    AGENT_DIR=$(agent-fleet tools ctx .agent_dir)
     USER_TEMPLATE="${AGENT_DIR}/${USER_BASE}"
 
     # Process user template with magic variables
-    USER_CONTENT=$(agent-fleet template inject \
+    USER_CONTENT=$(agent-fleet tools template inject \
         --source "$USER_TEMPLATE" \
         --var "AGENT_HOME=/home/agent" \
         --var "AGENT_USER=agent")
