@@ -81,33 +81,74 @@ type Injector interface {
 
 `Contribute()` runs at build time (in the CLI). `Injector` runs at runtime (inside the gateway binary).
 
-### Contributions
+### Contributions (Grouped by Concern)
 
 ```go
 type Contributions struct {
-    // Image
-    BaseImage      string              // only one plugin may set this
-    Packages       Packages            // apt, npm, pip
-    DockerfilePre  []string            // before user customization
-    DockerfilePost []string            // after user customization
-
-    // Gateway
-    EgressRules    []EgressRule        // hosts + injection behavior
-
-    // Bridge
-    BridgePlugin   *BridgePlugin       // TypeScript channel code
-
-    // Compose
-    Services       map[string]Service  // sidecars (DinD, etc.)
-    Volumes        []string
-    Ports          []string
-    Env            map[string]string
-
-    // Entrypoint
-    Hooks          []embed.FS          // scripts run before agent starts
-    EmbeddedFiles  []EmbeddedDir       // files COPYed into container
+    Image      *ImageContribution
+    Gateway    *GatewayContribution
+    Bridge     *BridgeContribution
+    Compose    *ComposeContribution
+    Entrypoint *EntrypointContribution
 }
 ```
+
+Each sub-struct is nil if the plugin doesn't contribute to that concern.
+
+```go
+// What goes into the Dockerfile
+type ImageContribution struct {
+    BaseImage string       // only one plugin may set (conflict = error)
+    Packages  Packages     // apt, npm, pip — merged across plugins
+    Files     []File       // COPY into image (embed.FS source + dest path)
+    Commands  []string     // RUN commands (no FROM/ENTRYPOINT allowed)
+}
+
+// What the gateway needs at runtime
+type GatewayContribution struct {
+    Rules    []EgressRule  // ordered within this plugin
+    Priority int           // cross-plugin evaluation order (lower = first)
+}
+
+// Channel plugin for the bridge
+type BridgeContribution struct {
+    Name   string          // plugin name ("telegram", "slack")
+    Source embed.FS        // TypeScript source to extract
+    Config map[string]any  // runtime config passed to bridge
+}
+
+// Docker Compose service definition
+type ComposeContribution struct {
+    Services map[string]Service
+    Volumes  []string
+    Ports    []string
+    Env      []EnvVar
+}
+
+type EnvVar struct {
+    Key      string
+    Value    string
+    Strategy EnvStrategy  // Override | ErrorIfConflict | Append
+}
+
+// Scripts that run in entrypoint before agent starts
+type EntrypointContribution struct {
+    Hooks []Hook
+}
+
+type Hook struct {
+    Name     string    // for logging: "[entrypoint] running: github-setup"
+    Source   embed.FS  // script content
+    Priority int       // execution order (lower = runs first)
+}
+```
+
+### Why Grouped
+
+- **Clear ownership**: each generator (Dockerfile, compose, gateway) only reads its own sub-struct
+- **Explicit conflicts**: `EnvVar.Strategy` declares how to handle duplicates
+- **Ordered execution**: `Hook.Priority` and `GatewayContribution.Priority` control cross-plugin ordering
+- **Nil = not contributed**: plugin only fills what it needs, rest is nil
 
 ### Module Structure
 
@@ -126,7 +167,7 @@ plugins/<name>/
 // cmd/agent-sandbox/plugins.go
 var Registry = []sdk.Plugin{
     codex.New(), claudecode.New(), pi.New(), aider.New(),  // runtimes
-    github.New(), openai.New(), anthropic.New(),            // credentials
+    github.New(), mcpoauth.New(), staticheader.New(),     // credentials
     docker.New(), telegram.New(), slack.New(),              // features/channels
 }
 ```
@@ -168,10 +209,31 @@ Declare egress rules + implement `Injector` for credential injection at the gate
 | Plugin | Hosts | Injection |
 |--------|-------|-----------|
 | `github` | github.com, *.github.com | Header: `Authorization: token <PAT>` |
-| `openai` | api.openai.com | Header: `Authorization: Bearer <key>` |
-| `anthropic` | api.anthropic.com | Header: `Authorization: Bearer <key>` |
-| `notion` | api.notion.com | OAuth token exchange + auto-refresh |
-| `custom-api` | user-defined | Header injection |
+| `mcp-oauth` | user-defined MCP server URL | OAuth2 dynamic client registration + token refresh |
+| `static-header` | user-defined endpoint | Static header injection (any API key) |
+
+Note: LLM API credentials (OpenAI, Anthropic) are handled by the runtime itself (codex device flow, claude login). No dedicated plugins needed — the agent stores its own auth token in the home directory.
+
+#### mcp-oauth plugin
+
+Generic OAuth2 plugin for any MCP server. User provides the MCP URL, plugin handles:
+1. Dynamic client registration (RFC 7591)
+2. Authorization flow (redirect user to auth URL)
+3. Token exchange (code → access_token + refresh_token)
+4. Auto-refresh before expiry
+5. Inject `Authorization: Bearer <token>` on matching requests
+
+```yaml
+plugins:
+  mcp-oauth:
+    servers:
+      - url: "https://mcp.notion.com"
+        name: "notion"
+      - url: "https://mcp.linear.app"
+        name: "linear"
+```
+
+The plugin auto-derives egress rules from the configured URLs. User triggers auth via channel command (`/oauth notion`).
 
 ### Channel Plugins
 
@@ -437,12 +499,12 @@ CMD ["node", "/opt/bridge/src/index.js"]
 ┌─ Internal Network ──────────────────────────────────────────┐
 │                                                              │
 │  ┌─ coder ───────────────────────────────────────────────┐  │
-│  │  Gateway (github + openai + docker + telegram rules)   │  │
+│  │  Gateway (github + docker + telegram rules)            │  │
 │  │  Bridge → codex                                        │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌─ reviewer ────────────────────────────────────────────┐  │
-│  │  Gateway (github + anthropic + telegram rules)         │  │
+│  │  Gateway (github + telegram rules)                     │  │
 │  │  Bridge → claude-code                                  │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
@@ -597,7 +659,8 @@ agent-sandbox/
     codex/      (go.mod, plugin.go)
     claude-code/(go.mod, plugin.go)
     github/     (go.mod, plugin.go, plugin_test.go)
-    openai/     (go.mod, plugin.go)
+    mcp-oauth/  (go.mod, plugin.go)
+    static-header/ (go.mod, plugin.go)
     docker/     (go.mod, plugin.go)
     telegram/   (go.mod, plugin.go, bridge/src/telegram.ts)
     slack/      (go.mod, plugin.go, bridge/src/slack.ts)
