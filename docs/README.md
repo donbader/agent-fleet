@@ -16,6 +16,7 @@
 | [Security Model](security-model.md) | Egress rules, transparent proxy, MITM, credential injection |
 | [Bridge Protocol](bridge-protocol.md) | ACP protocol, channel adapters, message routing |
 | [Docker API Proxy](docker-api-proxy.md) | Controlled container spawning [PLANNED] |
+| [agent-sandbox Design](agent-sandbox-design.md) | Next-gen opinionated sandbox orchestrator [DESIGN] |
 
 ## Decision Records
 
