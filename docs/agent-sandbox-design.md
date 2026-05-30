@@ -762,7 +762,103 @@ agent-sandbox/
 
 ---
 
-## Resolved Design Questions
+## Security Hardening
+
+### Attack Surface Analysis
+
+| Vector | Risk | Mitigation |
+|--------|------|------------|
+| Agent reads `/proc/<bridge_pid>/environ` | Steal bridge env vars | Bridge only has dummy tokens. Real creds in gateway process (different user, hidepid=2). |
+| Agent kills gateway process | DoS (no egress) | Gateway runs as `gateway` user. Agent (`agent` user) cannot signal it. |
+| Agent modifies iptables | Bypass proxy | Entrypoint drops NET_ADMIN before running bridge. Agent user has no capabilities. |
+| Agent modifies gateway config | Change egress rules | `/etc/gateway/config.yaml` owned by root, mode 0444. |
+| Agent ptraces bridge process | Inject code, steal memory | Set `kernel.yama.ptrace_scope=1` + bridge and agent are different UIDs. |
+| DNS tunneling (data exfiltration) | Bypass TCP proxy via UDP DNS | Redirect DNS to gateway's built-in DNS resolver (UDP iptables rule). Only resolve, no tunnel. |
+| Raw UDP exfiltration | Bypass TCP-only proxy | Drop all outbound UDP except DNS (port 53) to gateway. |
+| Sandbox CA private key theft | Forge TLS certs | CA key owned by `gateway` user, mode 0400. Agent cannot read. |
+| DinD direct access | Bypass Docker API policy | DinD listens on TLS with client cert auth. Only agent container has the client cert (in gateway-owned path). |
+| Container escape (kernel exploit) | Full host access | Out of scope. Use `--security-opt=no-new-privileges`, drop all caps except NET_ADMIN (entrypoint only). |
+| Fork bomb / resource exhaustion | DoS host | Compose sets `mem_limit`, `cpus`, `pids_limit` per container. |
+
+### Hardened Entrypoint
+
+```bash
+#!/bin/sh
+set -eu
+
+# 1. iptables: redirect TCP + restrict UDP
+iptables -t nat -A OUTPUT -p tcp -m owner ! --uid-owner gateway -j REDIRECT --to-port 8443
+# Allow DNS to gateway's resolver only
+iptables -A OUTPUT -p udp --dport 53 -m owner ! --uid-owner gateway -j REDIRECT --to-port 8053
+# Drop all other UDP from non-gateway users
+iptables -A OUTPUT -p udp -m owner ! --uid-owner gateway -j DROP
+
+# 2. Start gateway (background, as gateway user)
+su -c "gateway --config /etc/gateway/config.yaml" gateway &
+
+# 3. Home override
+if [ -d /opt/home-override ]; then
+    cp -a /opt/home-override/. /home/agent/
+    chown -R agent:agent /home/agent
+fi
+
+# 4. Run entrypoint hooks (as root, before capability drop)
+for hook in /opt/entrypoint-hooks/*.sh; do
+    [ -f "$hook" ] && . "$hook"
+done
+
+# 5. Lock down: remove capabilities, hide other processes
+mount -o remount,hidepid=2 /proc
+
+# 6. Drop to agent user (no new privileges)
+exec setpriv --no-new-privs -- gosu agent "$@"
+```
+
+### Compose Security Options
+
+```yaml
+# Generated per-agent service
+services:
+  coder:
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]  # only for entrypoint, dropped after
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 256
+```
+
+Note: `read_only: true` with tmpfs for /tmp and /run. Home directory is a named volume (writable). Gateway config and CA key are in read-only image layers.
+
+### File Permissions (inside container)
+
+```
+/etc/gateway/config.yaml    root:root   0444   (egress rules)
+/etc/gateway/ca.key         gateway:gateway 0400 (CA private key)
+/etc/gateway/ca.crt         root:root   0444   (CA cert, public)
+/usr/local/bin/gateway      root:root   0555   (binary)
+/usr/local/bin/entrypoint.sh root:root  0555   (entrypoint)
+/opt/home-override/         root:root   0755   (staging, read-only after copy)
+/opt/bridge/                root:root   0755   (bridge code)
+/home/agent/                agent:agent 0750   (writable home)
+```
+
+### Failure Modes
+
+| Failure | Behavior | Recovery |
+|---------|----------|----------|
+| Gateway crashes | All TCP connections fail (iptables still redirects to dead port) | Bridge detects, restarts gateway or exits |
+| Bridge crashes | Agent process dies (child of bridge) | Docker restart policy: `unless-stopped` |
+| DinD crashes | Docker commands fail inside agent | Agent retries or reports error |
+| Agent OOM killed | Container restarts | Docker restart policy |
+| Disk full | Writes fail | `pids_limit` + `mem_limit` prevent runaway |
+
+---
 
 ### Q1: How do agent-spawned containers route through the gateway?
 
