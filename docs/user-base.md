@@ -9,8 +9,8 @@ my-fleet/                    ← your repo
   agents/
     coder/
       agent.yaml
-      Dockerfile             ← custom base image (optional, Strategy 3)
-      home-override/         ← config files to bake into image (optional, Strategy 3)
+      Dockerfile             ← custom base image (optional, see Custom Base Template)
+      home-override/         ← config files to bake into image (optional)
         .gitconfig
     reviewer/
       agent.yaml
@@ -20,7 +20,7 @@ my-fleet/                    ← your repo
 
 The agent's home directory (`/home/agent`) can be set up in different ways depending on your needs.
 
-### Strategy 1.1: Named Volume
+### Named Volume
 
 The provider's render.sh outputs a named volume for the home directory. Docker populates it from the image on first run. No extra configuration needed — this is what the codex and channels-bridge runtimes do out of the box.
 
@@ -43,7 +43,7 @@ volumes:
 - Agent can write freely
 - Rebuild image doesn't affect existing volume data
 
-### Strategy 1.2: Bind Mount
+### Bind Mount
 
 Use the `volumes` field in agent.yaml to bind-mount a host directory as the home. Good for version-controlling the home directory with git.
 
@@ -68,7 +68,7 @@ Note: the path is relative to the compose file (fleet root), not relative to age
 - Permission issues on Linux (container UID vs host UID)
 - Need `.gitignore` for transient files (node_modules, .cache, etc.)
 
-### Strategy 3: Named Volume + Custom Base Template
+### Custom Base Template
 
 Combine a named volume with a custom Dockerfile template to pre-install tools and bake config files into the image. Docker populates the volume from the image on first run.
 
@@ -135,11 +135,11 @@ my-team-agents/              ← your repo (not agent-fleet)
 └── agents/
     ├── coder/
     │   ├── agent.yaml
-    │   ├── Dockerfile       ← extra tools (Strategy 3)
+    │   ├── Dockerfile       ← extra tools (Custom Base Template)
     │   └── home-override/
     │       └── .gitconfig
     └── reviewer/
-        └── agent.yaml       ← Strategy 1.1 (no customization)
+        └── agent.yaml       ← Named Volume (no customization)
 ```
 
 Run:

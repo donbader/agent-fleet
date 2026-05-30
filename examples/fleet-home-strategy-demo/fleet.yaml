@@ -4,9 +4,9 @@ fleet:
   name: home-strategy-demo
 
 agents:
-  - strategy-1-1
-  - strategy-1-2
-  - strategy-3
+  - named-volume
+  - bind-mount
+  - custom-base
 
 egress-presets:
   allow-all:

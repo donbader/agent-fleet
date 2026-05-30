@@ -12,4 +12,4 @@ egress:
   - allow-all
 
 volumes:
-  - "./agents/strategy-1-2/home:/home/agent"
+  - "./agents/bind-mount/home:/home/agent"
